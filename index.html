@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EVE 현질 효율 계산기 — PLEX 직접매도 vs 스킬팜</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#161c25; --panel2:#0e141c; --line:#28323f;
+    --txt:#e6edf3; --muted:#9aa6b2; --faint:#6b7682; --accent:#58a6ff;
+    --good:#3fb950; --good-bg:#0f2e1a; --good-line:#238636; --bad:#f0616d; --warn:#d29922;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;padding-top:56px;color:var(--txt);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased;
+       font-family:"Malgun Gothic","맑은 고딕",system-ui,-apple-system,sans-serif;
+       background:radial-gradient(1100px 560px at 50% -240px,#13243b 0%,var(--bg) 60%) fixed,var(--bg)}
+  a{color:var(--accent)}
+
+  .top-nav{position:fixed;top:0;left:0;right:0;z-index:1000;background:rgba(14,20,28,.96);border-bottom:1px solid var(--line);box-shadow:0 8px 24px rgba(0,0,0,.28);backdrop-filter:blur(8px)}
+  .top-nav__inner{max-width:1200px;margin:0 auto;min-height:56px;padding:8px 18px;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
+  .top-nav a{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:7px 14px;border:1px solid transparent;border-radius:999px;color:var(--muted);font-size:13px;font-weight:800;text-decoration:none;white-space:nowrap;transition:background .15s,border-color .15s,color .15s}
+  .top-nav a:hover{color:var(--txt);border-color:var(--line);background:rgba(88,166,255,.08)}
+  .top-nav a.active{color:#06121f;background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 3px rgba(88,166,255,.15)}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 20px 50px}
+
+  /* 히어로 */
+  .hero{padding:40px 0 24px;border-bottom:1px solid var(--line);margin-bottom:24px}
+  .eyebrow{display:inline-block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:800}
+  .hero h1{font-size:30px;line-height:1.2;margin:12px 0 10px;font-weight:800;letter-spacing:-.01em}
+  .hero p{color:var(--muted);margin:0;max-width:66ch;font-size:14px}
+  .badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+  .badge{font-size:11px;padding:5px 11px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--muted)}
+  .badge b{color:var(--txt);font-weight:700}
+
+  /* 카드 */
+  .card{background:linear-gradient(180deg,#161c25,#121822);border:1px solid var(--line);border-radius:14px;
+        padding:18px 20px;margin-bottom:18px;box-shadow:0 8px 24px rgba(0,0,0,.22)}
+  .card>h2{font-size:15px;margin:0 0 16px;display:flex;align-items:center;gap:10px;font-weight:700}
+  .card>h2 .n{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:8px;flex:none;
+        background:var(--accent);color:#06121f;font-size:13px;font-weight:800}
+  .card>h2 .sp{margin-left:auto;display:flex;align-items:center;gap:10px}
+
+  /* 입력 */
+  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:14px;margin-bottom:14px}
+  .row:last-child{margin-bottom:0}
+  .fld{display:flex;flex-direction:column;gap:6px}
+  .fld label{font-size:11.5px;color:var(--muted);font-weight:600}
+  input,select{width:100%;background:#0c121a;border:1px solid var(--line);color:var(--txt);border-radius:8px;
+        padding:9px 11px;font-size:13.5px;font-family:inherit;transition:border-color .15s,box-shadow .15s}
+  input:hover,select:hover{border-color:#3a475a}
+  input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(88,166,255,.15)}
+  input[readonly]{background:#0a0e14;color:var(--muted);cursor:default;border-style:dashed}
+  input:disabled,select:disabled{opacity:.5}
+
+  /* 버튼 */
+  button{background:linear-gradient(180deg,#5fb0ff,#3b82f6);color:#06121f;border:none;border-radius:8px;
+        padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:filter .15s,transform .05s}
+  button:hover{filter:brightness(1.07)}
+  button:active{transform:translateY(1px)}
+  button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
+  button.ghost:hover{border-color:var(--accent);background:rgba(88,166,255,.08);filter:none}
+  button:disabled{opacity:.5;cursor:wait}
+
+  /* 표 */
+  table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line)}
+  tbody tr:last-child td{border-bottom:none}
+  th{background:#0c121a;color:var(--muted);font-weight:600;font-size:12px}
+  td.l,th.l{text-align:left}
+  tbody tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+  tbody tr:hover td{background:rgba(88,166,255,.05)}
+  .winner td{background:var(--good-bg) !important;box-shadow:inset 3px 0 0 var(--good)}
+  h3.rh{font-weight:700} h3.rh .muted{font-weight:600;font-size:12px}
+  .rk{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:var(--line);color:var(--txt);font-size:11px;font-weight:800;margin-right:7px}
+  .winner .rk{background:var(--good);color:#06121f}
+
+  /* 기타 */
+  .muted{color:var(--muted)} .faint{color:var(--faint)}
+  .big{font-size:17px;font-weight:800}
+  .pos{color:var(--good);font-weight:600} .neg{color:var(--bad);font-weight:600}
+  .verdict{font-size:14.5px;padding:14px 16px;border-radius:10px;line-height:1.7;margin-top:14px;
+        background:rgba(88,166,255,.06);border:1px solid rgba(88,166,255,.25)}
+  .grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+  .qbox{background:#0c121a;border:1px solid var(--line);border-radius:10px;padding:14px}
+  .qbox h3{margin:0 0 10px;font-size:13.5px;color:var(--accent);font-weight:700}
+  .qtab{font-size:12px;width:100%;border:none}
+  .qtab td{padding:3px 2px;border:none;background:none !important}
+  .qtab tr:hover td{background:none !important}
+  .toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+  .pill{font-size:11px;padding:3px 10px;border-radius:999px;background:#0c121a;border:1px solid var(--line);color:var(--muted)}
+  .pill.ok{color:var(--good);border-color:var(--good-line)}
+  .pill.err{color:var(--bad);border-color:var(--bad)}
+  .hint{font-size:11.5px;color:var(--faint);line-height:1.5}
+  .switch{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .switch button{background:#0c121a;color:var(--muted);border-radius:0;font-weight:700;padding:6px 12px}
+  .switch button.on{background:var(--accent);color:#06121f}
+  .switch button:hover{filter:none}
+  details{margin-top:6px}
+  details summary{cursor:pointer;color:var(--accent);font-size:12.5px;font-weight:600}
+  .err{color:var(--bad);font-size:12px}
+  footer{margin-top:28px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);
+        font-size:11.5px;text-align:center;line-height:1.8}
+  @media (max-width:560px){
+    body{padding-top:96px}
+    .top-nav__inner{justify-content:flex-start;gap:6px;padding:8px 12px}
+    .top-nav a{flex:1 1 calc(50% - 6px);min-height:34px;padding:6px 10px;font-size:12.5px}
+    .hero h1{font-size:24px} .card{padding:16px 14px} .big{font-size:15px} th,td{padding:8px 9px}
+  }
+</style>
+</head>
+<body>
+<nav class="top-nav" aria-label="Main"><div class="top-nav__inner"><a href="/" class="active" aria-current="page">PLEX Calculator</a></div></nav>
+<div class="wrap">
+  <header class="hero">
+    <span class="eyebrow">EVE Online · ISK 효율</span>
+    <h1>현질 효율 계산기</h1>
+    <p>같은 PLEX 예산으로 <b>(A) ISK 직접 매도</b> vs <b>(B) 스킬 팜(오메가+MCT → LSI 생산·판매)</b> 중
+       어느 쪽이 <b>원 / 1B ISK</b>가 더 싼지(현질 효율이 좋은지) 비교합니다.</p>
+    <div class="badges">
+      <span class="badge">시장 <b>Jita 4-4</b></span>
+      <span class="badge">출처 <b>Fuzzwork</b></span>
+      <span class="badge">실시간 시세 · 원/1B 비교</span>
+    </div>
+  </header>
+
+  <!-- ===== 1) 시세 입력 카드 ===== -->
+  <div class="card">
+    <h2><span class="n">1</span> 시세 <span class="sp"><span class="pill" id="ts">갱신 안 됨</span></span></h2>
+    <div class="toolbar">
+      <button id="btnFetch">시세 새로고침</button>
+      <span class="hint">시세칸은 읽기 전용입니다. 값은 <b>시세 새로고침</b> 또는 <b>거래 방향 드롭다운</b>으로만 채워집니다.</span>
+      <span id="fetchErr" class="err"></span>
+    </div>
+    <div class="grid3">
+      <!-- PLEX -->
+      <div class="qbox">
+        <h3>PLEX <span class="muted">(44992)</span></h3>
+        <table class="qtab"><tbody id="qPLEX"></tbody></table>
+        <div class="fld" style="margin-top:8px">
+          <label>거래 방향 / 적용 호가</label>
+          <select id="dirPLEX" data-type="PLEX"></select>
+        </div>
+        <div class="fld">
+          <label>적용 PLEX 매도가 (ISK)</label>
+          <input type="number" class="price" id="pxPLEX" step="1000" readonly>
+        </div>
+      </div>
+      <!-- LSI -->
+      <div class="qbox">
+        <h3>Large Skill Injector <span class="muted">(40520)</span></h3>
+        <table class="qtab"><tbody id="qLSI"></tbody></table>
+        <div class="fld" style="margin-top:8px">
+          <label>거래 방향 / 적용 호가</label>
+          <select id="dirLSI" data-type="LSI"></select>
+        </div>
+        <div class="fld">
+          <label>적용 LSI 매도가 (ISK)</label>
+          <input type="number" class="price" id="pxLSI" step="1000" readonly>
+        </div>
+      </div>
+      <!-- Extractor -->
+      <div class="qbox">
+        <h3>Skill Extractor <span class="muted">(40519)</span></h3>
+        <table class="qtab"><tbody id="qEXT"></tbody></table>
+        <div class="fld" style="margin-top:8px">
+          <label>거래 방향 / 적용 호가 (매수)</label>
+          <select id="dirEXT" data-type="EXT"></select>
+        </div>
+        <div class="fld">
+          <label>익스트랙터 시장 매수가 (ISK)</label>
+          <input type="number" class="price" id="pxEXT" step="1000" readonly>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 입력값 (숨김 — 스킬팜 랭킹행에 farm 기본값 공급) ===== -->
+  <div class="card" style="display:none">
+    <h2><span class="n">2</span> 입력값 <span class="sp"><span class="switch">
+        <button id="uB" class="on" data-u="B">B(10억)</button><button id="uM" data-u="M">M(백만)</button></span></span></h2>
+    <div class="row">
+      <div class="fld"><label>총 PLEX 예산</label><input type="number" id="iBudget" value="20000"></div>
+      <div class="fld"><label>결제 금액 입력 방식</label>
+        <select id="krwMode"><option value="total">총 결제 원화(₩)</option><option value="per">원/PLEX</option></select></div>
+      <div class="fld"><label id="krwLbl">총 결제 원화 (₩)</label><input type="number" id="iKRW" value="0"></div>
+    </div>
+    <div class="row">
+      <div class="fld"><label>오메가 비용 (PLEX)</label><input type="number" id="iOmega" value="6600"></div>
+      <div class="fld"><label>오메가 기간 (개월)</label><input type="number" id="iOmegaM" value="24"></div>
+      <div class="fld"><label>MCT 1개 비용 (PLEX)</label><input type="number" id="iMctPlex" value="4400"></div>
+      <div class="fld"><label>MCT 개수</label><input type="number" id="iMct" value="2"></div>
+    </div>
+    <div class="row">
+      <div class="fld"><label>팜 기간 (개월)</label><input type="number" id="iFarmM" value="24"></div>
+      <div class="fld"><label>캐릭당 SP/일</label><input type="number" id="iSpDay" value="64800"></div>
+      <div class="fld"><label>가속기 사용</label>
+        <select id="iBooster"><option value="0">안 씀(×1)</option><option value="1">씀(계수 입력)</option></select></div>
+      <div class="fld"><label>가속기 곱셈계수</label><input type="number" id="iBoostMul" value="1" step="0.05" disabled></div>
+    </div>
+    <div class="row">
+      <div class="fld"><label>추출 불가 플로어 SP (1회 차감)</label><input type="number" id="iFloor" value="5000000"></div>
+      <div class="fld"><label>LSI당 SP</label><input type="number" id="iSpLsi" value="500000"></div>
+      <div class="fld"><label>판매세+중개수수료 % (LSI 매도)</label><input type="number" id="iTax" value="2.0" step="0.1"></div>
+    </div>
+    <div class="row">
+      <div class="fld"><label>NES 익스트랙터 번들 개수</label><input type="number" id="iNesQty" value="50"></div>
+      <div class="fld"><label>NES 번들 가격 (PLEX)</label><input type="number" id="iNesPlex" value="5600"></div>
+      <div class="fld"><label class="muted">→ 익스트랙터 1개당 PLEX</label><input type="number" id="iNesUnit" disabled></div>
+    </div>
+  </div>
+
+  <!-- ===== ★ 효율 랭킹 ===== -->
+  <div class="card">
+    <h2><span class="n">★</span> 효율 랭킹 <span class="sp"><span class="hint">원/단위 낮을수록 효율 ↑ · 1위 강조 · Steam/웹은 정가 기준</span></span></h2>
+    <div class="row">
+      <div class="fld"><label>USD → 원 환율</label><input type="number" id="iUsdKrw" value="1545"></div>
+      <div class="fld"><label>인젝터 체감 (보유 SP 구간)</label>
+        <select id="iOwnedSp">
+          <option value="500000">5M 미만 — LSI당 500k</option>
+          <option value="400000" selected>5M ~ 50M — LSI당 400k</option>
+          <option value="300000">50M ~ 80M — LSI당 300k</option>
+          <option value="150000">80M 초과 — LSI당 150k</option>
+        </select></div>
+    </div>
+    <h3 class="rh" style="margin:6px 0 8px">① 원 / 1B ISK <span class="muted">— ISK 싸게 벌기</span></h3>
+    <table><thead><tr><th class="l">방법</th><th>원 / 1B ISK</th><th class="l">비고</th></tr></thead><tbody id="rankISK"></tbody></table>
+    <div id="rankISKPager" class="toolbar" style="margin-top:8px;justify-content:center"></div>
+    <h3 class="rh" style="margin:18px 0 8px">② 원 / 1M SP <span class="muted">— SP 싸게 얻기</span></h3>
+    <table><thead><tr><th class="l">방법</th><th>원 / 1M SP</th><th class="l">비고</th></tr></thead><tbody id="rankSP"></tbody></table>
+    <div id="rankSPPager" class="toolbar" style="margin-top:8px;justify-content:center"></div>
+    <h3 class="rh" style="margin:18px 0 8px">③ 원 / 오메가 1개월 <span class="muted">— 오메가 싸게</span></h3>
+    <table><thead><tr><th class="l">방법</th><th>원 / 월</th><th class="l">비고</th></tr></thead><tbody id="rankOmega"></tbody></table>
+    <div id="rankOmegaPager" class="toolbar" style="margin-top:10px;justify-content:center"></div>
+    <p class="hint" style="margin-top:10px">※ 원/PLEX는 입력값(총 결제 원화 또는 원/PLEX)에서 산출. ②의 훈련은 ③ 최저가 오메가 비용 기준, 인젝터는 PLEX 직매도로 ISK 조달 가정.</p>
+  </div>
+
+  <details><summary>참고: 계산식 / 시세 출처</summary>
+    <p class="hint">엔드포인트: market.fuzzwork.co.uk/aggregates/?station=60003760&amp;types=44992,40520,40519 · station 60003760 = Jita 4-4(지타 4-4 트레이드 허브). 이 앱은 같은 origin의 <code>/aggregates</code> 엔드포인트로 공개 시세를 가져옵니다.</p>
+  </details>
+
+  <footer>
+    시세 데이터: <b>Fuzzwork Market</b> · Jita 4-4 (station 60003760) · 최종 계산은 화면의 입력값 기준입니다.<br>
+    공개 시세 기반 계산기 · 로그인 없음 · 투자·결제 판단은 본인 책임
+  </footer>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   EVE 현질 효율 계산기 — 바닐라 JS (백엔드 없음)
+   - 시세는 Fuzzwork에서 fetch하지만, 화면의 시세 입력값이 항상 최종 진리.
+   - 자동 fetch는 입력값을 채워주는 기본값일 뿐.
+   ========================================================================= */
+
+/* 타입ID 매핑 */
+const TYPES = { PLEX:"44992", LSI:"40520", EXT:"40519" };
+const FUZZ = "https://market.fuzzwork.co.uk/aggregates/?station=60003760&types=44992,40520,40519";
+const PROXY = "/aggregates";
+
+/* 마지막으로 받은 원시 시세 보관 (typeID별 buy/sell 객체) */
+let QUOTES = { PLEX:null, LSI:null, EXT:null };
+
+/* 단위 토글: 'B'(10억) 또는 'M'(백만) */
+let UNIT = "B";
+
+/* Steam 오메가 라이브 가격(세일 포함). {개월:{final,initial,disc}} 또는 null */
+let STEAM_LIVE = null;
+/* ③ 오메가 랭킹 페이지네이션 (5개씩) */
+let OMEGA_ROWS = [], omegaPage = 0; const OMEGA_PER = 5;
+async function fetchSteamOmega(){
+  try{
+    const d = await (await fetch("/steamomega",{cache:"no-store"})).json();
+    if(d && Object.keys(d).length){ STEAM_LIVE = d; recalc(); }
+  }catch(e){/* 실패 시 정가 사용 */}
+}
+
+/* ---- 효율 랭킹 기본값(안 변하는 상수, 2026-06 확인) ---- */
+// 오메가 티어: 개월, 일수, 인게임 PLEX, Steam 정가(₩), EVE웹 정가($), 웹 보너스 PLEX
+const OMEGA_TIERS = [
+  {mo:1,  days:30,  plex:500,  steam:26200,  usd:20,  bonus:0},
+  {mo:3,  days:90,  plex:1200, steam:62880,  usd:60,  bonus:200},
+  {mo:6,  days:180, plex:2100, steam:110040, usd:120, bonus:500},
+  {mo:12, days:365, plex:3600, steam:188640, usd:240, bonus:1000},
+  {mo:24, days:730, plex:4950, steam:345840, usd:480, bonus:1500},
+];
+// 스킬 인젝터(LSI) 체감: 보유 SP 구간별 1개당 실효 SP
+function lsiSpForTotal(sp){
+  if(sp < 5e6)  return 500000;
+  if(sp < 50e6) return 400000;
+  if(sp < 80e6) return 300000;
+  return 150000;
+}
+// 훈련 SP/일 가정: +5임플·리맵 최적 ≈ 2700/h, 임플 없음 ≈ 2160/h
+const SPDAY_OPT = 64800, SPDAY_NOIMP = 51840;
+// PLEX 구매처별 20k 번들 정가(2026-06): Steam ₩851,500 / EVE웹 $649.99
+const PLEX_BUNDLE = {steamKRW:851500, webUSD:649.99, qty:20000};
+// EVE웹 SP 판매(스킬 훈련 가속 번들): SP + 대뇌가속기. 스토어 전 품목.
+const SP_BUNDLES = [
+  {name:"언독 부스트 번들",     usd:16,  sp:648000},
+  {name:"3x 언독 부스트 번들",  usd:32,  sp:1944000},
+  {name:"애프터버너 부스트 번들", usd:48,  sp:1944000},
+  {name:"3x 애프터버너 번들",   usd:96,  sp:5832000},
+  {name:"워프 부스트 번들",     usd:96,  sp:3888000},
+  {name:"3x 워프 부스트 번들",  usd:192, sp:11664000},
+  {name:"점프 부스트 번들",     usd:192, sp:7776000},
+  {name:"3x 점프 부스트 번들",  usd:384, sp:23328000},
+];
+
+/* ---- 숫자 포맷 ---- */
+const $ = id => document.getElementById(id);
+const num = id => parseFloat($(id).value) || 0;
+function comma(n){                                   // 천단위 콤마 (정수 반올림)
+  if(!isFinite(n)) return "-";
+  return Math.round(n).toLocaleString("en-US");
+}
+function fmtISK(v){                                   // ISK를 B/M 단위로
+  if(!isFinite(v)) return "-";
+  if(UNIT==="B") return (v/1e9).toLocaleString("ko-KR",{maximumFractionDigits:3})+" B";
+  return (v/1e6).toLocaleString("ko-KR",{maximumFractionDigits:1})+" M";
+}
+function fmtKRW(v){
+  if(!isFinite(v)||v<=0) return "-";
+  return "₩ "+Math.round(v).toLocaleString("ko-KR");
+}
+
+/* ---- 거래 방향 드롭다운 옵션 구성 ----
+   각 호가 키를 사람이 읽기 쉽게 라벨링. 기본 선택은 type별로 다름. */
+const PRICE_KEYS = [
+  ["buy.max","매수 최고가 (즉시 매도가)"],
+  ["buy.percentile","매수 백분위"],
+  ["buy.weightedAverage","매수 가중평균"],
+  ["buy.median","매수 중앙값"],
+  ["buy.min","매수 최저가"],
+  ["sell.min","매도 최저가 (즉시 매수가)"],
+  ["sell.percentile","매도 백분위"],
+  ["sell.weightedAverage","매도 가중평균"],
+  ["sell.median","매도 중앙값"],
+  ["sell.max","매도 최고가"],
+];
+function buildDirSelect(sel, defKey){
+  sel.innerHTML = "";
+  PRICE_KEYS.forEach(([k,label])=>{
+    const o=document.createElement("option");
+    o.value=k; o.textContent=label;
+    if(k===defKey) o.selected=true;
+    sel.appendChild(o);
+  });
+}
+buildDirSelect($("dirPLEX"),"buy.max");   // PLEX 매도 → 기본 buy.max
+buildDirSelect($("dirLSI"),"buy.max");    // LSI 매도 → 기본 buy.max
+buildDirSelect($("dirEXT"),"sell.min");   // Extractor 매수 → 기본 sell.min
+
+/* QUOTES에서 "side.field" 키로 값 추출 */
+function pick(q, key){
+  if(!q) return null;
+  const [side,field]=key.split(".");
+  if(!q[side]) return null;
+  const v=parseFloat(q[side][field]);
+  return isFinite(v)?v:null;
+}
+
+/* 시세 원시값 테이블 렌더 (buy/sell 주요 호가 표시) */
+function renderQuoteTable(tbodyId, q){
+  const tb=$(tbodyId); tb.innerHTML="";
+  const rows=[
+    ["매수 max", q? q.buy.max:null],
+    ["매수 min", q? q.buy.min:null],
+    ["매도 min", q? q.sell.min:null],
+    ["매도 max", q? q.sell.max:null],
+  ];
+  rows.forEach(([lbl,v])=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td class="l muted">${lbl}</td><td>${v!=null?comma(v):"-"}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+/* 선택된 방향에 맞춰 노란 가격칸을 QUOTES 값으로 채움 (수동값 덮어쓰기) */
+function fillPriceFromDir(type){
+  const map={PLEX:["dirPLEX","pxPLEX"],LSI:["dirLSI","pxLSI"],EXT:["dirEXT","pxEXT"]};
+  const [selId,inpId]=map[type];
+  const v=pick(QUOTES[type], $(selId).value);
+  if(v!=null && v>0) $(inpId).value=Math.round(v);   // 0/빈 값이면 기존 편집값 보존
+}
+
+/* ---- 상태 저장/복원 (로컬 파일이므로 localStorage 사용) ---- */
+const LS_KEY="evePlexCalcState_v1";
+function saveState(){
+  try{
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      quotes:QUOTES,
+      ts:$("ts").textContent,
+      px:{PLEX:$("pxPLEX").value, LSI:$("pxLSI").value, EXT:$("pxEXT").value},
+      dir:{PLEX:$("dirPLEX").value, LSI:$("dirLSI").value, EXT:$("dirEXT").value}
+    }));
+  }catch(e){/* 일부 브라우저는 file://에서 localStorage 비활성 — 조용히 무시 */}
+}
+function loadState(){
+  try{
+    const raw=localStorage.getItem(LS_KEY);
+    if(!raw) return false;
+    const st=JSON.parse(raw);
+    if(st.quotes){
+      QUOTES=st.quotes;
+      renderQuoteTable("qPLEX",QUOTES.PLEX);
+      renderQuoteTable("qLSI",QUOTES.LSI);
+      renderQuoteTable("qEXT",QUOTES.EXT);
+    }
+    if(st.dir){ if(st.dir.PLEX)$("dirPLEX").value=st.dir.PLEX; if(st.dir.LSI)$("dirLSI").value=st.dir.LSI; if(st.dir.EXT)$("dirEXT").value=st.dir.EXT; }
+    if(st.px){ if(st.px.PLEX)$("pxPLEX").value=st.px.PLEX; if(st.px.LSI)$("pxLSI").value=st.px.LSI; if(st.px.EXT)$("pxEXT").value=st.px.EXT; }
+    if(st.ts) $("ts").textContent=st.ts;   // 저장된 갱신일시 복원
+    return true;
+  }catch(e){ return false; }
+}
+
+/* ---- 시세 fetch ---- */
+/* 단일 URL에서 시세를 받아 파싱·검증. 실패하면 throw. */
+async function fetchOne(url){
+  const res = await fetch(url, {cache:"no-store"});
+  if(!res.ok) throw new Error("HTTP "+res.status);
+  const data = await res.json();
+  const q = data[TYPES.PLEX];
+  const probe = q && q.buy ? parseFloat(q.buy.max) : NaN;
+  if(!(probe>0)) throw new Error("값이 0/비어있음");   // CORS·리다이렉트로 온 빈 응답 배제
+  return data;
+}
+
+/* 받은 데이터로 화면 반영 + 저장 */
+function applyData(data){
+  QUOTES.PLEX=data[TYPES.PLEX]; QUOTES.LSI=data[TYPES.LSI]; QUOTES.EXT=data[TYPES.EXT];
+  renderQuoteTable("qPLEX",QUOTES.PLEX);
+  renderQuoteTable("qLSI",QUOTES.LSI);
+  renderQuoteTable("qEXT",QUOTES.EXT);
+  fillPriceFromDir("PLEX"); fillPriceFromDir("LSI"); fillPriceFromDir("EXT");
+  $("ts").textContent="갱신: "+new Date().toLocaleString("ko-KR");
+  $("ts").className="pill ok";
+  saveState();   // 갱신값+갱신일시 저장
+  recalc();
+}
+
+/* 후보 URL들을 순서대로 시도(직접 → 공개프록시 → 로컬프록시). 하나라도 성공하면 끝. */
+async function refresh(candidates){
+  const e=$("fetchErr"); e.textContent="시세 받는 중…";
+  $("btnFetch").disabled=true; 
+  const errs=[];
+  try{
+    for(const c of candidates){
+      try{
+        const data=await fetchOne(c.url);
+        applyData(data);
+        e.textContent="";
+        if(c.note) e.textContent=c.note;   // 폴백 경로로 받았음을 알림
+        return;
+      }catch(err){ errs.push(c.label+": "+err.message); }
+    }
+    e.textContent="시세 가져오기 실패 ("+errs.join(" / ")+"). 잠시 후 다시 시도하세요.";
+    $("ts").textContent="갱신 실패"; $("ts").className="pill err";
+  }finally{
+    $("btnFetch").disabled=false; 
+  }
+}
+/* =========================================================================
+   핵심 계산 — chars 수(MCT개수)를 파라미터로 받아 isk_B 등을 반환.
+   기본 호출은 화면 입력의 MCT개수를 사용하고, 민감도 스윕은 0~6을 대입.
+   ========================================================================= */
+function compute(mctCount){
+  const plexPrice = num("pxPLEX");      // PLEX 매도가 (ISK)
+  const lsiPrice  = num("pxLSI");       // LSI 매도가 (ISK)
+  const extMarket = num("pxEXT");       // 익스트랙터 시장 매수가 (ISK)
+
+  const budget    = num("iBudget");
+  const omegaPlex = num("iOmega");
+  const mctPlex   = num("iMctPlex");
+  const farmM     = num("iFarmM");
+  let   spDay     = num("iSpDay");
+  const floorSp   = num("iFloor");
+  const spLsi     = num("iSpLsi") || 500000;
+  const tax       = num("iTax")/100;
+  const nesQty    = num("iNesQty") || 1;
+  const nesPlex   = num("iNesPlex");
+
+  // 가속기 곱셈계수 반영
+  if($("iBooster").value==="1") spDay *= (num("iBoostMul")||1);
+
+  const chars = 1 + mctCount;
+  const days  = farmM * 30.4167;
+  const spPerChar = spDay*days - floorSp;            // 캐릭당 (플로어 1회 차감)
+  const totalSp   = spPerChar * chars;
+  const lsiCount  = Math.floor(totalSp / spLsi);
+  const extNeeded = lsiCount;
+
+  // 익스트랙터 단가: 시장 즉시매수 vs NES PLEX 환산 중 싼 쪽
+  const nesIsk  = (nesPlex/nesQty) * plexPrice;      // PLEX를 안 팔고 쓰는 기회비용
+  const extUnit = Math.min(extMarket, nesIsk);
+  const extSrc  = (extMarket<=nesIsk) ? "시장 매수" : "NES PLEX 환산";
+
+  const setupPlex   = omegaPlex + mctCount*mctPlex;
+  const leftoverPlex= budget - setupPlex;
+  const leftoverIsk = leftoverPlex * plexPrice;
+
+  // 루트 A: PLEX 직접 매도
+  const iskA = budget * plexPrice;
+
+  // 루트 B: 스킬 팜
+  const lsiGross = lsiCount * lsiPrice;
+  const lsiNet   = lsiGross * (1 - tax);
+  const extCost  = extNeeded * extUnit;
+  const iskB_pre = lsiGross - extCost + leftoverIsk; // 세전
+  const iskB     = lsiNet   - extCost + leftoverIsk; // 세후
+
+  return {plexPrice,lsiPrice,extMarket,budget,chars,days,spPerChar,totalSp,
+          lsiCount,extNeeded,nesIsk,extUnit,extSrc,setupPlex,leftoverPlex,leftoverIsk,
+          iskA,lsiGross,lsiNet,extCost,iskB_pre,iskB,tax};
+}
+
+/* 결제 원화(총액) 산출 — 입력 방식 토글 반영 */
+function totalKRW(budget){
+  if($("krwMode").value==="per") return num("iKRW")*budget;  // 원/PLEX × 총PLEX
+  return num("iKRW");                                        // 총 결제 원화
+}
+
+/* =========================================================================
+   렌더링
+   ========================================================================= */
+/* 랭킹 렌더 — 표 3개 공통, 5개씩 페이지네이션. rows:[{label,val,note}] val 낮을수록 1위 */
+const RANK = { rankISK:{page:0}, rankSP:{page:0}, rankOmega:{page:0} };
+const RANK_PER = 5;
+function renderRankPaged(id, rows){
+  RANK[id].rows = rows.filter(x=>isFinite(x.val) && x.val>0).sort((a,b)=>a.val-b.val);
+  drawRank(id);
+}
+function drawRank(id){
+  const st=RANK[id], rows=st.rows||[];
+  const pages=Math.max(1, Math.ceil(rows.length/RANK_PER));
+  st.page=Math.min(Math.max(0, st.page||0), pages-1);
+  const s=st.page*RANK_PER;
+  $(id).innerHTML = rows.slice(s, s+RANK_PER).map((x,i)=>{
+    const rank=s+i+1;
+    return `<tr class="${rank===1?'winner':''}"><td class="l"><span class="rk">${rank}</span>${x.label}</td>`
+      +`<td class="big">${x.disp||fmtKRW(x.val)}</td><td class="l muted">${x.note||""}</td></tr>`;
+  }).join("");
+  const pg=$(id+"Pager");
+  if(pg) pg.innerHTML = pages>1
+    ? `<button class="ghost" data-rk="${id}" data-d="-1" ${st.page===0?"disabled":""}>◀ 이전</button>`
+      +`<span class="muted" style="margin:0 12px">${st.page+1} / ${pages} (총 ${rows.length})</span>`
+      +`<button class="ghost" data-rk="${id}" data-d="1" ${st.page>=pages-1?"disabled":""}>다음 ▶</button>`
+    : "";
+}
+document.addEventListener("click", e=>{   // 페이지 버튼 위임
+  const b=e.target.closest("[data-rk]"); if(!b) return;
+  const st=RANK[b.dataset.rk]; if(!st) return;
+  st.page=(st.page||0)+parseInt(b.dataset.d,10); drawRank(b.dataset.rk);
+});
+
+/* 3개 효율 랭킹 계산 — kpp = 원/PLEX */
+function buildRankings(r){
+  const usdKrw = num("iUsdKrw")||1545;
+  const px = r.plexPrice, lsi = r.lsiPrice;
+  const M = mo => mo*30.4167;
+
+  // PLEX 구매처(20k 번들 정가). 최저가 구매처 단가를 ②③ 원/PLEX 기준으로 사용.
+  const chans = [
+    {store:"Steam 20k 번들", per: PLEX_BUNDLE.steamKRW/PLEX_BUNDLE.qty},
+    {store:"EVE웹 20k 번들",  per: PLEX_BUNDLE.webUSD*usdKrw/PLEX_BUNDLE.qty},
+  ].filter(c=>c.per>0);
+  const kpp = chans.length ? Math.min(...chans.map(c=>c.per)) : 0;
+
+  /* ③ 원/오메가 1일 (먼저 — ②가 최저가를 씀) */
+  const om=[];
+  OMEGA_TIERS.forEach(t=>{
+    om.push({label:`PLEX-오메가 ${t.mo}개월`, val:(t.plex*kpp)/t.mo, note:`${comma(t.plex)} PLEX`});
+    const sL = STEAM_LIVE && STEAM_LIVE[t.mo];
+    const sPrice = sL ? sL.final : t.steam;
+    const sNote = sL ? (sL.disc>0 ? `₩${comma(sPrice)} · ${sL.disc}% 세일(라이브)` : `₩${comma(sPrice)} (라이브)`) : `₩${comma(t.steam)} 정가`;
+    om.push({label:`Steam 직접 ${t.mo}개월`, val:sPrice/t.mo, note:sNote});
+    om.push({label:`EVE웹 ${t.mo}개월`, val:(t.usd*usdKrw - t.bonus*kpp)/t.mo, note:`$${t.usd}${t.bonus?` +${comma(t.bonus)}P`:""}`});
+  });
+  // ②용: 순수 구매 옵션 중 최저(원/월) → 일당 환산 (자가펀딩 행 제외)
+  const pureVals = om.map(x=>x.val).filter(v=>isFinite(v)&&v>0);
+  const bestOmegaMonth = pureVals.length ? Math.min(...pureVals) : NaN;
+  const bestOmegaDay = bestOmegaMonth/30.4167;
+  // 스킬팜 자가펀딩 오메가 — 24mo 오메가(4,950P)+MCT(4,600P/캐릭) 풀팜, +5임플, SP 전량 추출·판매 수익으로 상쇄. 캐릭 1~3 중 최적 자동.
+  { const sfFloor=num("iFloor")||5000000, sfSpLsi=num("iSpLsi")||500000;
+    const sfDays=24*30.4167, sfLsiPerChar=Math.floor(Math.max(0, SPDAY_OPT*sfDays - sfFloor)/sfSpLsi);
+    const sfWonPerIsk=(px>0)?kpp/px:NaN; let bestN=null;
+    for(let ch=1; ch<=3; ch++){
+      const lsiTot=sfLsiPerChar*ch;
+      const incomeIsk=lsiTot*lsi*(1-r.tax) - lsiTot*r.extUnit;
+      const net=((4950+(ch-1)*4600)*kpp - incomeIsk*sfWonPerIsk)/24;
+      if(bestN===null||net<bestN.net) bestN={ch,net,lsiTot};
+    }
+    if(bestN && isFinite(bestN.net)){ const neg=bestN.net<0; const mctN=bestN.ch-1;
+      om.push({label:`스킬팜 자가펀딩 오메가 (${mctN?`MCT ${mctN}개·${bestN.ch}캐릭`:"오메가만 1캐릭"})`, val: neg?0.0001:bestN.net,
+        disp: neg?`이득 ₩${comma(-bestN.net)}/월`:null,
+        note:`24mo 오메가${mctN?` + MCT ${mctN}개`:""}·+5임플 풀팜 → LSI ${comma(bestN.lsiTot)}개 판매수익 차감`}); }
+  }
+  renderRankPaged("rankOmega", om);
+
+  /* ① 원/1B ISK — PLEX 구매처별 비교(판매가는 위 시세 드롭다운 선택값 px 사용) */
+  const isk = chans.map(c=>({label:`${c.store}에서 PLEX 사서 판매`, val:(px>0)?c.per/px*1e9:NaN,
+    note:`${comma(Math.round(c.per))}원/PLEX 구매 → PLEX 판매가 ${comma(px)} ISK/개`}));
+  isk.push({label:`스킬팜 (최저가 PLEX로 오메가+MCT)`, val:(r.iskB>0)?(kpp*r.budget)/(r.iskB/1e9):NaN,
+    note:`${comma(Math.round(kpp))}원/PLEX로 팜 → LSI ${comma(r.lsiCount)}개 판매 (장기)`});
+  renderRankPaged("rankISK", isk);
+
+  /* ② 원/1M SP */
+  const spLsi = num("iOwnedSp")||400000;            // select 값 = LSI당 실효 SP(구간)
+  const wonPerLsi = (px>0)? lsi*(kpp/px) : NaN;     // LSI 1개를 ISK로 사는 원가(PLEX 직매도로 ISK 조달)
+  const sp=[
+    {label:"인젝터 주입(LSI 구매)", val:wonPerLsi/(spLsi/1e6), note:`LSI당 ${comma(spLsi)} SP (선택 구간)`},
+    {label:"훈련 +5임플 (64,800/일)", val:bestOmegaDay/(SPDAY_OPT/1e6), note:`최적 리맵·임플`},
+    {label:"훈련 임플없음 (51,840/일)", val:bestOmegaDay/(SPDAY_NOIMP/1e6), note:`+5임플 없음`},
+  ];
+  SP_BUNDLES.forEach(b=>{
+    sp.push({label:`EVE웹 ${b.name}`, val:(b.usd*usdKrw)/(b.sp/1e6),
+      note:`$${b.usd} / ${comma(b.sp)} SP · +대뇌가속기 보너스(미반영)`});
+  });
+  renderRankPaged("rankSP", sp);
+}
+
+function recalc(){
+  // NES 단가 표시
+  $("iNesUnit").value = (num("iNesPlex")/(num("iNesQty")||1)).toFixed(2);
+
+  const r = compute(num("iMct"));
+  buildRankings(r);
+  return;   // 랭킹만 사용 — 이하 셋업요약/결과비교/손익분기/민감도 카드는 제거됨
+
+  // KRW / 1B (낮을수록 이득). isk가 0 이하이면 무한대 처리.
+  const kpb = (isk)=> (krw>0 && isk>0) ? krw/(isk/1e9) : NaN;
+  const kpbA = kpb(r.iskA), kpbB = kpb(r.iskB);
+
+  /* --- ③ 요약 --- */
+  $("summary").innerHTML = `
+    <tr><td class="l">동시 트레이닝 캐릭 (1 + MCT)</td><td>${comma(r.chars)} 캐릭</td></tr>
+    <tr><td class="l">팜 일수 (개월 × 30.4167)</td><td>${comma(r.days)} 일</td></tr>
+    <tr><td class="l">캐릭당 추출 가능 SP (플로어 차감 후)</td><td>${comma(r.spPerChar)} SP</td></tr>
+    <tr><td class="l">총 추출 가능 SP</td><td>${comma(r.totalSp)} SP</td></tr>
+    <tr><td class="l">생산 LSI 개수 (floor)</td><td><b>${comma(r.lsiCount)}</b> 개</td></tr>
+    <tr><td class="l">필요 익스트랙터 개수</td><td>${comma(r.extNeeded)} 개</td></tr>
+    <tr><td class="l">채택된 익스트랙터 소스 / 단가</td>
+        <td><b>${r.extSrc}</b> · ${comma(r.extUnit)} ISK
+        <span class="muted">(시장 ${comma(r.extMarket)} vs NES환산 ${comma(r.nesIsk)})</span></td></tr>
+    <tr><td class="l">셋업 PLEX (오메가 + MCT)</td><td>${comma(r.setupPlex)} PLEX</td></tr>
+    <tr><td class="l">잔여 PLEX → ISK</td>
+        <td>${comma(r.leftoverPlex)} PLEX → ${fmtISK(r.leftoverIsk)}</td></tr>`;
+
+  /* --- ④ 결과 비교 --- */
+  const bWin = r.iskB > r.iskA;     // ISK 많은 쪽이 이득(원/1B 낮음)
+  $("result").innerHTML = `
+    <tr class="${!bWin?'winner':''}">
+      <td class="l"><b>루트 A — PLEX 직접 매도</b></td>
+      <td class="big">${fmtISK(r.iskA)}</td>
+      <td class="big">${fmtISK(r.iskA)}</td>
+      <td class="big">${isFinite(kpbA)?fmtKRW(kpbA):"-"}</td></tr>
+    <tr class="${bWin?'winner':''}">
+      <td class="l"><b>루트 B — 스킬 팜</b></td>
+      <td>${fmtISK(r.iskB_pre)}</td>
+      <td class="big">${fmtISK(r.iskB)}</td>
+      <td class="big">${isFinite(kpbB)?fmtKRW(kpbB):"-"}</td></tr>`;
+
+  /* --- 판정 문구 --- */
+  const diffISK = r.iskA - r.iskB;
+  const winLabel = bWin ? "루트 B(스킬팜)" : "루트 A(직접매도)";
+  const moreISK  = Math.abs(diffISK);
+  let pctTxt="-";
+  if(isFinite(kpbA)&&isFinite(kpbB)){
+    // 원/1B 기준 우위 % = (비싼쪽 - 싼쪽)/비싼쪽
+    const lo=Math.min(kpbA,kpbB), hi=Math.max(kpbA,kpbB);
+    pctTxt=((hi-lo)/hi*100).toFixed(1)+"%";
+  }
+  let vtxt = `<b>${winLabel}</b>가 ISK <b>${fmtISK(moreISK)}</b> 더 많습니다.`;
+  if(krw>0) vtxt += ` 원/1B 기준 <b>${pctTxt}</b> 유리.`;
+  else vtxt += ` <span class="muted">(결제 원화를 입력하면 원/1B 효율도 비교합니다.)</span>`;
+  if(r.iskB<=0) vtxt += ` <span class="neg">※ 현재 시세에선 스킬팜 순수익이 0 이하입니다.</span>`;
+  $("verdict").innerHTML = vtxt;
+
+  /* --- ⑤ 손익분기 --- */
+  // 스펙 정의: margin = LSI매도가 − ext_unit, threshold = (setup_plex/lsi_count)×plex
+  const margin    = r.lsiPrice - r.extUnit;
+  const threshold = r.lsiCount>0 ? (r.setupPlex/r.lsiCount)*r.plexPrice : NaN;
+  const beDiff    = margin - threshold;
+  // 세금까지 반영한 정확 역산: isk_B = isk_A 가 되는 LSI매도가 / ext단가
+  const lsiNeeded = r.lsiCount>0
+      ? (r.iskA - r.leftoverIsk + r.lsiCount*r.extUnit) / (r.lsiCount*(1-r.tax)) : NaN;
+  const extNeededPrice = r.lsiCount>0
+      ? (r.lsiNet + r.leftoverIsk - r.iskA) / r.lsiCount : NaN;
+  $("breakeven").innerHTML = `
+    <tr><td class="l">LSI 1개 순마진 (LSI매도가 − 익스트랙터단가)</td><td>${comma(margin)} ISK</td></tr>
+    <tr><td class="l">손익분기 임계치 (셋업PLEX/LSI개수 × PLEX가)</td><td>${comma(threshold)} ISK</td></tr>
+    <tr><td class="l">차이 (마진 − 임계치)</td>
+        <td class="${beDiff>=0?'pos':'neg'}">${comma(beDiff)} ISK ${beDiff>=0?'(팜 우위 경향)':'(직접매도 우위 경향)'}
+        <span class="muted">※ 세금 미반영 간이지표</span></td></tr>
+    <tr><td class="l">팜이 이기려면 — 필요 LSI 매도가 (세금 반영)</td>
+        <td><b>${comma(lsiNeeded)}</b> ISK
+        <span class="muted">(현재 ${comma(r.lsiPrice)}, ${lsiNeeded>r.lsiPrice?'+'+comma(lsiNeeded-r.lsiPrice)+' 필요':'이미 충족'})</span></td></tr>
+    <tr><td class="l">또는 — 필요 익스트랙터 단가 (세금 반영)</td>
+        <td><b>${comma(extNeededPrice)}</b> ISK
+        <span class="muted">(현재 ${comma(r.extUnit)}, ${extNeededPrice<r.extUnit?comma(r.extUnit-extNeededPrice)+' 인하 필요':'이미 충족'})</span></td></tr>`;
+
+  /* --- ⑥ 민감도 스윕 (MCT 0~6) --- */
+  const sw=$("sweep"); sw.innerHTML="";
+  const curMct=num("iMct");
+  for(let m=0;m<=6;m++){
+    const c=compute(m);
+    const k=kpb(c.iskB);
+    const dvsA=c.iskB-c.iskA;
+    const tr=document.createElement("tr");
+    if(m===curMct) tr.className="winner";
+    tr.innerHTML=`<td>${m}</td><td>${1+m}</td><td>${comma(c.lsiCount)}</td>
+      <td>${fmtISK(c.iskB)}</td><td>${isFinite(k)?fmtKRW(k):"-"}</td>
+      <td class="${dvsA>=0?'pos':'neg'}">${dvsA>=0?'+':''}${fmtISK(dvsA)}</td>`;
+    sw.appendChild(tr);
+  }
+}
+
+/* =========================================================================
+   이벤트 바인딩
+   ========================================================================= */
+// This standalone app is served over HTTP; use the same-origin market endpoint.
+const SERVED = true;
+function candidates(){ return [{url:"/aggregates", label:"server"}]; }
+// 시세 새로고침
+$("btnFetch").addEventListener("click",()=>refresh(candidates()));
+
+// 방향 드롭다운 바꾸면 해당 가격칸을 시세값으로 다시 채움
+["dirPLEX","dirLSI","dirEXT"].forEach(id=>{
+  $(id).addEventListener("change",()=>{
+    fillPriceFromDir($(id).dataset.type);
+    saveState();
+    recalc();
+  });
+});
+
+// 가속기 토글 → 곱셈계수 입력칸 활성화
+$("iBooster").addEventListener("change",function(){
+  $("iBoostMul").disabled = (this.value!=="1");
+  recalc();
+});
+
+// 결제 방식 토글 → 라벨 변경
+$("krwMode").addEventListener("change",function(){
+  $("krwLbl").textContent = this.value==="per" ? "원 / PLEX" : "총 결제 원화 (₩)";
+  recalc();
+});
+
+// 단위 토글 B/M
+function setUnit(u){
+  UNIT=u;
+  $("uB").classList.toggle("on",u==="B");
+  $("uM").classList.toggle("on",u==="M");
+  recalc();
+}
+$("uB").addEventListener("click",()=>setUnit("B"));
+$("uM").addEventListener("click",()=>setUnit("M"));
+
+// 모든 입력 변화 시 재계산
+document.querySelectorAll("input,select").forEach(el=>{
+  el.addEventListener("input",recalc);
+});
+
+/* ---- 초기 기본값: 검증 기준 시세를 미리 채워 둠 ---- */
+$("pxPLEX").value=4713000;
+$("pxLSI").value=700200000;
+$("pxEXT").value=460400000;
+loadState();   // 저장된 갱신값/갱신일시가 있으면 기본값 위에 복원
+recalc();      // 페이지 로드 시 1회 계산
+if(SERVED) refresh(candidates());   // 서버 서빙이면 라이브 시세 자동 로드
+if(SERVED) fetchSteamOmega();       // Steam 오메가 라이브 가격(세일 포함) 로드
+</script>
+</body>
+</html>
