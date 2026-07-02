@@ -2,6 +2,8 @@
 """Standalone public PLEX farming efficiency calculator."""
 import json
 import os
+import threading
+import time
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,6 +19,36 @@ FUZZWORK_AGGREGATES_URL = os.environ.get(
 )
 STEAM_OMEGA_APPS = {1: 695740, 3: 695741, 6: 695742, 12: 695743, 24: 1983081}
 USER_AGENT = "nisuwaz-tools/1.0"
+UPSTREAM_CACHE_SECONDS = 300
+
+
+class UpstreamCache:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.body = None
+        self.fetched_at = 0.0
+
+    def get(self, fetcher):
+        now = time.time()
+        if self.body is not None and now - self.fetched_at < UPSTREAM_CACHE_SECONDS:
+            return self.body, False
+        with self.lock:
+            now = time.time()
+            if self.body is not None and now - self.fetched_at < UPSTREAM_CACHE_SECONDS:
+                return self.body, False
+            try:
+                body = fetcher()
+            except Exception:
+                if self.body is not None:
+                    return self.body, True
+                raise
+            self.body = body
+            self.fetched_at = time.time()
+            return body, False
+
+
+MARKET_CACHE = UpstreamCache()
+STEAM_CACHE = UpstreamCache()
 
 DEFAULTS = {
     "plex_price": 4713000.0,
@@ -53,6 +85,17 @@ def _json_response(handler, code, payload):
     handler.wfile.write(body)
 
 
+def _cached_json_bytes_response(handler, body, stale=False):
+    handler.send_response(200)
+    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Cache-Control", f"public, max-age={UPSTREAM_CACHE_SECONDS}")
+    if stale:
+        handler.send_header("X-Stale", "1")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
 def _static_response(handler, path):
     body = path.read_bytes()
     handler.send_response(200)
@@ -61,6 +104,30 @@ def _static_response(handler, path):
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def _fetch_steam_omega():
+    out = {}
+    failures = 0
+    for months, app_id in STEAM_OMEGA_APPS.items():
+        url = (
+            "https://store.steampowered.com/api/appdetails?"
+            f"appids={app_id}&cc=kr&filters=price_overview"
+        )
+        try:
+            data = json.loads(_fetch(url, timeout=10).decode("utf-8"))
+            price = data[str(app_id)]["data"].get("price_overview") or {}
+            if price:
+                out[months] = {
+                    "final": int(price.get("final", 0)) // 100,
+                    "initial": int(price.get("initial", 0)) // 100,
+                    "disc": int(price.get("discount_percent", 0)),
+                }
+        except Exception:
+            failures += 1
+    if failures == len(STEAM_OMEGA_APPS) and not out:
+        raise RuntimeError("steam omega fetch failed")
+    return json.dumps(out, ensure_ascii=False, sort_keys=True).encode("utf-8")
 
 
 def _number(params, name):
@@ -155,35 +222,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path in ("/aggregates", "/api/market-data"):
             try:
-                body = _fetch(FUZZWORK_AGGREGATES_URL, timeout=15)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-            except Exception as exc:
-                _json_response(self, 502, {"error": str(exc)})
+                body, stale = MARKET_CACHE.get(lambda: _fetch(FUZZWORK_AGGREGATES_URL, timeout=15))
+                _cached_json_bytes_response(self, body, stale=stale)
+            except Exception:
+                _json_response(self, 502, {"error": "upstream fetch failed"})
             return
         if path == "/steamomega":
-            out = {}
-            for months, app_id in STEAM_OMEGA_APPS.items():
-                url = (
-                    "https://store.steampowered.com/api/appdetails?"
-                    f"appids={app_id}&cc=kr&filters=price_overview"
-                )
-                try:
-                    data = json.loads(_fetch(url, timeout=10).decode("utf-8"))
-                    price = data[str(app_id)]["data"].get("price_overview") or {}
-                    if price:
-                        out[months] = {
-                            "final": int(price.get("final", 0)) // 100,
-                            "initial": int(price.get("initial", 0)) // 100,
-                            "disc": int(price.get("discount_percent", 0)),
-                        }
-                except Exception:
-                    continue
-            _json_response(self, 200, out)
+            try:
+                body, stale = STEAM_CACHE.get(_fetch_steam_omega)
+                _cached_json_bytes_response(self, body, stale=stale)
+            except Exception:
+                _json_response(self, 502, {"error": "upstream fetch failed"})
             return
         if path == "/api/calculate":
             _json_response(self, 200, calculate(params))
