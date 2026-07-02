@@ -2,6 +2,7 @@
 """Standalone public PLEX farming efficiency calculator."""
 import json
 import os
+import re
 import threading
 import time
 import urllib.parse
@@ -18,23 +19,30 @@ FUZZWORK_AGGREGATES_URL = os.environ.get(
     "https://market.fuzzwork.co.uk/aggregates/?station=60003760&types=44992,40520,40519",
 )
 STEAM_OMEGA_APPS = {1: 695740, 3: 695741, 6: 695742, 12: 695743, 24: 1983081}
-USER_AGENT = "nisuwaz-tools/1.0"
+WEBSTORE_PLEX_URL = "https://store.eveonline.com/en/plex"
+USER_AGENT = "Mozilla/5.0 (compatible; nisuwaz-tools/1.1)"
 UPSTREAM_CACHE_SECONDS = 300
+WEBSTORE_CACHE_SECONDS = 3600
+WEBSTORE_OFFER_RE = re.compile(
+    r'\{\\"sysId\\":.*?\\"purchaseNotAllowedReason\\":\\"[^"]*\\"\}',
+    re.DOTALL,
+)
 
 
 class UpstreamCache:
-    def __init__(self):
+    def __init__(self, ttl=UPSTREAM_CACHE_SECONDS):
+        self.ttl = ttl
         self.lock = threading.Lock()
         self.body = None
         self.fetched_at = 0.0
 
     def get(self, fetcher):
         now = time.time()
-        if self.body is not None and now - self.fetched_at < UPSTREAM_CACHE_SECONDS:
+        if self.body is not None and now - self.fetched_at < self.ttl:
             return self.body, False
         with self.lock:
             now = time.time()
-            if self.body is not None and now - self.fetched_at < UPSTREAM_CACHE_SECONDS:
+            if self.body is not None and now - self.fetched_at < self.ttl:
                 return self.body, False
             try:
                 body = fetcher()
@@ -49,6 +57,7 @@ class UpstreamCache:
 
 MARKET_CACHE = UpstreamCache()
 STEAM_CACHE = UpstreamCache()
+WEBSTORE_CACHE = UpstreamCache(ttl=WEBSTORE_CACHE_SECONDS)
 
 DEFAULTS = {
     "plex_price": 4713000.0,
@@ -85,10 +94,10 @@ def _json_response(handler, code, payload):
     handler.wfile.write(body)
 
 
-def _cached_json_bytes_response(handler, body, stale=False):
+def _cached_json_bytes_response(handler, body, stale=False, max_age=UPSTREAM_CACHE_SECONDS):
     handler.send_response(200)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
-    handler.send_header("Cache-Control", f"public, max-age={UPSTREAM_CACHE_SECONDS}")
+    handler.send_header("Cache-Control", f"public, max-age={max_age}")
     if stale:
         handler.send_header("X-Stale", "1")
     handler.send_header("Content-Length", str(len(body)))
@@ -128,6 +137,39 @@ def _fetch_steam_omega():
     if failures == len(STEAM_OMEGA_APPS) and not out:
         raise RuntimeError("steam omega fetch failed")
     return json.dumps(out, ensure_ascii=False, sort_keys=True).encode("utf-8")
+
+
+def _fetch_webstore():
+    html = _fetch(WEBSTORE_PLEX_URL, timeout=15).decode("utf-8", errors="replace")
+    offers = []
+    seen = set()
+    for match in WEBSTORE_OFFER_RE.finditer(html):
+        raw = match.group(0).replace('\\"', '"')
+        try:
+            offer = json.loads(raw)
+        except Exception:
+            continue
+        offer_id = offer.get("id")
+        pricing = offer.get("pricing")
+        if not offer_id or offer_id in seen or not offer.get("canPurchase") or not pricing:
+            continue
+        seen.add(offer_id)
+        offers.append(
+            {
+                "id": offer_id,
+                "title": offer.get("titleEnglish"),
+                "category": offer.get("offerCategory"),
+                "slug": offer.get("slug"),
+                "price": pricing.get("price"),
+                "basePrice": pricing.get("basePrice"),
+                "discountPercentage": pricing.get("discountPercentage"),
+                "isRecurring": offer.get("isRecurring"),
+                "canPurchase": offer.get("canPurchase"),
+            }
+        )
+    if not offers:
+        raise RuntimeError("webstore fetch failed")
+    return json.dumps({"offers": offers}, ensure_ascii=False, sort_keys=True).encode("utf-8")
 
 
 def _number(params, name):
@@ -231,6 +273,15 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 body, stale = STEAM_CACHE.get(_fetch_steam_omega)
                 _cached_json_bytes_response(self, body, stale=stale)
+            except Exception:
+                _json_response(self, 502, {"error": "upstream fetch failed"})
+            return
+        if path == "/webstore":
+            try:
+                body, stale = WEBSTORE_CACHE.get(_fetch_webstore)
+                _cached_json_bytes_response(
+                    self, body, stale=stale, max_age=WEBSTORE_CACHE_SECONDS
+                )
             except Exception:
                 _json_response(self, 502, {"error": "upstream fetch failed"})
             return
