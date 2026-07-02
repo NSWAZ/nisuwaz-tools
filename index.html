@@ -282,7 +282,7 @@ const OMEGA_TIERS = [
   {mo:3,  days:90,  plex:1200, steam:62880,  usd:60,  bonus:200},
   {mo:6,  days:180, plex:2100, steam:110040, usd:120, bonus:500},
   {mo:12, days:365, plex:3600, steam:188640, usd:240, bonus:1000},
-  {mo:24, days:730, plex:4950, steam:345840, usd:480, bonus:1500},
+  {mo:24, days:730, plex:6600, steam:345840, usd:480, bonus:1500},
 ];
 // 스킬 인젝터(LSI) 체감: 보유 SP 구간별 1개당 실효 SP
 function lsiSpForTotal(sp){
@@ -295,6 +295,17 @@ function lsiSpForTotal(sp){
 const SPDAY_OPT = 64800, SPDAY_NOIMP = 51840;
 // PLEX 구매처별 20k 번들 정가(2026-06): Steam ₩851,500 / EVE웹 $649.99
 const PLEX_BUNDLE = {steamKRW:851500, webUSD:649.99, qty:20000};
+const PLEX_PACKS = [
+  {plex:100,   usd:5},
+  {plex:500,   usd:25},
+  {plex:1000,  usd:45},
+  {plex:1500,  usd:65},
+  {plex:3000,  usd:125},
+  {plex:6000,  usd:240},
+  {plex:12000, usd:420},
+  {plex:20000, usd:650},
+  {plex:64500, usd:2000},
+];
 // EVE웹 SP 판매(스킬 훈련 가속 번들): SP + 대뇌가속기. 스토어 전 품목.
 const SP_BUNDLES = [
   {name:"언독 부스트 번들",     usd:16,  sp:648000},
@@ -384,36 +395,6 @@ function fillPriceFromDir(type){
   if(v!=null && v>0) $(inpId).value=Math.round(v);   // 0/빈 값이면 기존 편집값 보존
 }
 
-/* ---- 상태 저장/복원 (로컬 파일이므로 localStorage 사용) ---- */
-const LS_KEY="evePlexCalcState_v1";
-function saveState(){
-  try{
-    localStorage.setItem(LS_KEY, JSON.stringify({
-      quotes:QUOTES,
-      ts:$("ts").textContent,
-      px:{PLEX:$("pxPLEX").value, LSI:$("pxLSI").value, EXT:$("pxEXT").value},
-      dir:{PLEX:$("dirPLEX").value, LSI:$("dirLSI").value, EXT:$("dirEXT").value}
-    }));
-  }catch(e){/* 일부 브라우저는 file://에서 localStorage 비활성 — 조용히 무시 */}
-}
-function loadState(){
-  try{
-    const raw=localStorage.getItem(LS_KEY);
-    if(!raw) return false;
-    const st=JSON.parse(raw);
-    if(st.quotes){
-      QUOTES=st.quotes;
-      renderQuoteTable("qPLEX",QUOTES.PLEX);
-      renderQuoteTable("qLSI",QUOTES.LSI);
-      renderQuoteTable("qEXT",QUOTES.EXT);
-    }
-    if(st.dir){ if(st.dir.PLEX)$("dirPLEX").value=st.dir.PLEX; if(st.dir.LSI)$("dirLSI").value=st.dir.LSI; if(st.dir.EXT)$("dirEXT").value=st.dir.EXT; }
-    if(st.px){ if(st.px.PLEX)$("pxPLEX").value=st.px.PLEX; if(st.px.LSI)$("pxLSI").value=st.px.LSI; if(st.px.EXT)$("pxEXT").value=st.px.EXT; }
-    if(st.ts) $("ts").textContent=st.ts;   // 저장된 갱신일시 복원
-    return true;
-  }catch(e){ return false; }
-}
-
 /* ---- 시세 fetch ---- */
 /* 단일 URL에서 시세를 받아 파싱·검증. 실패하면 throw. */
 async function fetchOne(url){
@@ -435,7 +416,6 @@ function applyData(data){
   fillPriceFromDir("PLEX"); fillPriceFromDir("LSI"); fillPriceFromDir("EXT");
   $("ts").textContent="갱신: "+new Date().toLocaleString("ko-KR");
   $("ts").className="pill ok";
-  saveState();   // 갱신값+갱신일시 저장
   recalc();
 }
 
@@ -562,7 +542,7 @@ function buildRankings(r){
   // PLEX 구매처(20k 번들 정가). 최저가 구매처 단가를 ②③ 원/PLEX 기준으로 사용.
   const chans = [
     {store:"Steam 20k 번들", per: PLEX_BUNDLE.steamKRW/PLEX_BUNDLE.qty},
-    {store:"EVE웹 20k 번들",  per: PLEX_BUNDLE.webUSD*usdKrw/PLEX_BUNDLE.qty},
+    ...PLEX_PACKS.map(pack=>({store:`EVE웹 ${comma(pack.plex)} PLEX팩`, per:pack.usd*usdKrw/pack.plex, pack})),
   ].filter(c=>c.per>0);
   const kpp = chans.length ? Math.min(...chans.map(c=>c.per)) : 0;
 
@@ -587,7 +567,7 @@ function buildRankings(r){
     for(let ch=1; ch<=3; ch++){
       const lsiTot=sfLsiPerChar*ch;
       const incomeIsk=lsiTot*lsi*(1-r.tax) - lsiTot*r.extUnit;
-      const net=((4950+(ch-1)*4600)*kpp - incomeIsk*sfWonPerIsk)/24;
+      const net=((6600+(ch-1)*4600)*kpp - incomeIsk*sfWonPerIsk)/24;
       if(bestN===null||net<bestN.net) bestN={ch,net,lsiTot};
     }
     if(bestN && isFinite(bestN.net)){ const neg=bestN.net<0; const mctN=bestN.ch-1;
@@ -598,7 +578,7 @@ function buildRankings(r){
   renderRankPaged("rankOmega", om);
 
   /* ① 원/1B ISK — PLEX 구매처별 비교(판매가는 위 시세 드롭다운 선택값 px 사용) */
-  const isk = chans.map(c=>({label:`${c.store}에서 PLEX 사서 판매`, val:(px>0)?c.per/px*1e9:NaN,
+  const isk = chans.map(c=>({label:c.pack?`EVE웹 ${comma(c.pack.plex)} PLEX팩 사서 판매`:`${c.store}에서 PLEX 사서 판매`, val:(px>0)?c.per/px*1e9:NaN,
     note:`${comma(Math.round(c.per))}원/PLEX 구매 → PLEX 판매가 ${comma(px)} ISK/개`}));
   isk.push({label:`스킬팜 (최저가 PLEX로 오메가+MCT)`, val:(r.iskB>0)?(kpp*r.budget)/(r.iskB/1e9):NaN,
     note:`${comma(Math.round(kpp))}원/PLEX로 팜 → LSI ${comma(r.lsiCount)}개 판매 (장기)`});
@@ -728,7 +708,6 @@ $("btnFetch").addEventListener("click",()=>refresh(candidates()));
 ["dirPLEX","dirLSI","dirEXT"].forEach(id=>{
   $(id).addEventListener("change",()=>{
     fillPriceFromDir($(id).dataset.type);
-    saveState();
     recalc();
   });
 });
@@ -764,7 +743,6 @@ document.querySelectorAll("input,select").forEach(el=>{
 $("pxPLEX").value=4713000;
 $("pxLSI").value=700200000;
 $("pxEXT").value=460400000;
-loadState();   // 저장된 갱신값/갱신일시가 있으면 기본값 위에 복원
 recalc();      // 페이지 로드 시 1회 계산
 if(SERVED) refresh(candidates());   // 서버 서빙이면 라이브 시세 자동 로드
 if(SERVED) fetchSteamOmega();       // Steam 오메가 라이브 가격(세일 포함) 로드
