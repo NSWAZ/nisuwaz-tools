@@ -232,6 +232,7 @@
     <h3 class="rh" style="margin:18px 0 8px">③ 원 / 오메가 1개월 <span class="muted">— 오메가 싸게</span></h3>
     <table><thead><tr><th class="l">방법</th><th>원 / 월</th><th class="l">비고</th></tr></thead><tbody id="rankOmega"></tbody></table>
     <div id="rankOmegaPager" class="toolbar" style="margin-top:10px;justify-content:center"></div>
+    <p class="hint" style="margin-top:8px">※ 웹 가격은 store.eveonline.com에서 자동 조회합니다(서버 캐시 1시간). 조회 실패 시 기본값을 사용합니다.</p>
     <p class="hint" style="margin-top:10px">※ 원/PLEX는 입력값(총 결제 원화 또는 원/PLEX)에서 산출. ②의 훈련은 ③ 최저가 오메가 비용 기준, 인젝터는 PLEX 직매도로 ISK 조달 가정.</p>
   </div>
 
@@ -266,6 +267,7 @@ let UNIT = "B";
 
 /* Steam 오메가 라이브 가격(세일 포함). {개월:{final,initial,disc}} 또는 null */
 let STEAM_LIVE = null;
+let WEBSTORE_LIVE = null;
 /* ③ 오메가 랭킹 페이지네이션 (5개씩) */
 let OMEGA_ROWS = [], omegaPage = 0; const OMEGA_PER = 5;
 async function fetchSteamOmega(){
@@ -273,6 +275,39 @@ async function fetchSteamOmega(){
     const d = await (await fetch("/steamomega",{cache:"no-store"})).json();
     if(d && Object.keys(d).length){ STEAM_LIVE = d; recalc(); }
   }catch(e){/* 실패 시 정가 사용 */}
+}
+async function fetchWebstore(){
+  try{
+    const d = await (await fetch("/webstore",{cache:"no-store"})).json();
+    if(!d || !Array.isArray(d.offers)) return;
+    const omega = {};
+    const plexPacks = [];
+    d.offers.forEach(o=>{
+      if(!o || !o.canPurchase) return;
+      const basePrice = Number(o.basePrice);
+      if(!(basePrice>0)) return;
+      const price = Number(o.price);
+      const discountPercentage = Number(o.discountPercentage)||0;
+      if(o.category==="Omega"){
+        const m = String(o.title||"").match(/^(\d+) Months? Omega/);
+        if(m) omega[parseInt(m[1],10)] = {...o, basePrice, price, discountPercentage};
+      }else if(o.category==="PLEX"){
+        const m = String(o.title||"").match(/^([\d,]+) PLEX/);
+        if(m){
+          plexPacks.push({
+            plex: parseInt(m[1].replace(/,/g,""),10),
+            usd: basePrice,
+            price,
+            discountPercentage
+          });
+        }
+      }
+    });
+    if(Object.keys(omega).length || plexPacks.length){
+      WEBSTORE_LIVE = {omega, plexPacks};
+      recalc();
+    }
+  }catch(e){/* 실패 시 기본값 사용 */}
 }
 
 /* ---- 효율 랭킹 기본값(안 변하는 상수, 2026-06 확인) ---- */
@@ -333,6 +368,10 @@ function fmtISK(v){                                   // ISK를 B/M 단위로
 function fmtKRW(v){
   if(!isFinite(v)||v<=0) return "-";
   return "₩ "+Math.round(v).toLocaleString("ko-KR");
+}
+function fmtUSD(v){
+  if(!isFinite(v)||v<=0) return "$-";
+  return "$"+Number(v).toLocaleString("en-US",{maximumFractionDigits:2});
 }
 
 /* ---- 거래 방향 드롭다운 옵션 구성 ----
@@ -538,11 +577,14 @@ function buildRankings(r){
   const usdKrw = num("iUsdKrw")||1545;
   const px = r.plexPrice, lsi = r.lsiPrice;
   const M = mo => mo*30.4167;
+  const plexPacks = (WEBSTORE_LIVE && WEBSTORE_LIVE.plexPacks && WEBSTORE_LIVE.plexPacks.length)
+    ? WEBSTORE_LIVE.plexPacks
+    : PLEX_PACKS;
 
   // PLEX 구매처(20k 번들 정가). 최저가 구매처 단가를 ②③ 원/PLEX 기준으로 사용.
   const chans = [
     {store:"Steam 20k 번들", per: PLEX_BUNDLE.steamKRW/PLEX_BUNDLE.qty},
-    ...PLEX_PACKS.map(pack=>({store:`EVE웹 ${comma(pack.plex)} PLEX팩`, per:pack.usd*usdKrw/pack.plex, pack})),
+    ...plexPacks.map(pack=>({store:`EVE웹 ${comma(pack.plex)} PLEX팩`, per:pack.usd*usdKrw/pack.plex, pack})),
   ].filter(c=>c.per>0);
   const kpp = chans.length ? Math.min(...chans.map(c=>c.per)) : 0;
 
@@ -554,7 +596,10 @@ function buildRankings(r){
     const sPrice = sL ? sL.final : t.steam;
     const sNote = sL ? (sL.disc>0 ? `₩${comma(sPrice)} · ${sL.disc}% 세일(라이브)` : `₩${comma(sPrice)} (라이브)`) : `₩${comma(t.steam)} 정가`;
     om.push({label:`Steam 직접 ${t.mo}개월`, val:sPrice/t.mo, note:sNote});
-    om.push({label:`EVE웹 ${t.mo}개월`, val:(t.usd*usdKrw - t.bonus*kpp)/t.mo, note:`$${t.usd}${t.bonus?` +${comma(t.bonus)}P`:""}`});
+    const wL = WEBSTORE_LIVE && WEBSTORE_LIVE.omega && WEBSTORE_LIVE.omega[t.mo];
+    const webUsd = wL ? wL.basePrice : t.usd;
+    const saleNote = wL && wL.discountPercentage>0 ? ` · 세일 ${fmtUSD(wL.price)} (-${wL.discountPercentage}%)` : "";
+    om.push({label:`EVE웹 ${t.mo}개월`, val:(webUsd*usdKrw - t.bonus*kpp)/t.mo, note:`${fmtUSD(webUsd)}${t.bonus?` +${comma(t.bonus)}P`:""}${saleNote}`});
   });
   // ②용: 순수 구매 옵션 중 최저(원/월) → 일당 환산 (자가펀딩 행 제외)
   const pureVals = om.map(x=>x.val).filter(v=>isFinite(v)&&v>0);
@@ -579,7 +624,7 @@ function buildRankings(r){
 
   /* ① 원/1B ISK — PLEX 구매처별 비교(판매가는 위 시세 드롭다운 선택값 px 사용) */
   const isk = chans.map(c=>({label:c.pack?`EVE웹 ${comma(c.pack.plex)} PLEX팩 사서 판매`:`${c.store}에서 PLEX 사서 판매`, val:(px>0)?c.per/px*1e9:NaN,
-    note:`${comma(Math.round(c.per))}원/PLEX 구매 → PLEX 판매가 ${comma(px)} ISK/개`}));
+    note:`${comma(Math.round(c.per))}원/PLEX 구매${c.pack && c.pack.discountPercentage>0?` · 세일 ${fmtUSD(c.pack.price)} (-${c.pack.discountPercentage}%)`:""} → PLEX 판매가 ${comma(px)} ISK/개`}));
   isk.push({label:`스킬팜 (최저가 PLEX로 오메가+MCT)`, val:(r.iskB>0)?(kpp*r.budget)/(r.iskB/1e9):NaN,
     note:`${comma(Math.round(kpp))}원/PLEX로 팜 → LSI ${comma(r.lsiCount)}개 판매 (장기)`});
   renderRankPaged("rankISK", isk);
@@ -746,6 +791,7 @@ $("pxEXT").value=460400000;
 recalc();      // 페이지 로드 시 1회 계산
 if(SERVED) refresh(candidates());   // 서버 서빙이면 라이브 시세 자동 로드
 if(SERVED) fetchSteamOmega();       // Steam 오메가 라이브 가격(세일 포함) 로드
+if(SERVED) fetchWebstore();         // EVE 웹스토어 PLEX/오메가 가격 로드
 </script>
 </body>
 </html>

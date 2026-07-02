@@ -10,7 +10,7 @@ Standalone public tools for EVE Online.
 
 - Fuzzwork market aggregates for Jita 4-4 prices of PLEX, Large Skill Injector, and Skill Extractor.
 - Steam public app details API for KRW Omega pricing when available.
-- Built-in public retail-price constants for ranking comparisons.
+- EVE Online web store prices for USD PLEX and Omega ranking comparisons when available.
 
 No EVE login, character cache, roster data, or private storage is used.
 
@@ -27,6 +27,7 @@ Useful endpoints:
 - `GET /` — calculator page
 - `GET /aggregates` — CORS-friendly Fuzzwork proxy
 - `GET /steamomega` — public Steam Omega price proxy
+- `GET /webstore` — public EVE web-store PLEX and Omega price proxy
 - `GET /api/calculate` — JSON calculation with default inputs
 
 ## Docker
