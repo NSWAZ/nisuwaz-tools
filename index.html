@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EVE 현질 효율 계산기 — PLEX 직접매도 vs 스킬팜</title>
+<title>EVE 현질 효율 계산기 — ISK·SP·오메가 효율 랭킹</title>
 <style>
   :root{
     --bg:#0b0f14; --panel:#161c25; --panel2:#0e141c; --line:#28323f;
@@ -92,6 +92,9 @@
   .pill.ok{color:var(--good);border-color:var(--good-line)}
   .pill.err{color:var(--bad);border-color:var(--bad)}
   .hint{font-size:11.5px;color:var(--faint);line-height:1.5}
+  .inline-checks{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 8px}
+  .inline-checks label{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);font-weight:600}
+  .inline-checks input{width:auto;margin:0;accent-color:var(--accent)}
   .switch{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .switch button{background:#0c121a;color:var(--muted);border-radius:0;font-weight:700;padding:6px 12px}
   .switch button.on{background:var(--accent);color:#06121f}
@@ -115,21 +118,21 @@
   <header class="hero">
     <span class="eyebrow">EVE Online · ISK 효율</span>
     <h1>현질 효율 계산기</h1>
-    <p>같은 PLEX 예산으로 <b>(A) ISK 직접 매도</b> vs <b>(B) 스킬 팜(오메가+MCT → LSI 생산·판매)</b> 중
-       어느 쪽이 <b>원 / 1B ISK</b>가 더 싼지(현질 효율이 좋은지) 비교합니다.</p>
+    <p>실시간 시세(Jita 4-4 Fuzzwork)와 스토어 가격(Steam·EVE 웹 자동, NES 수동)을 기반으로,<br>
+       같은 예산으로 ISK·SP·오메가를 얻는 여러 현질 경로의 원화 효율을 세 랭킹으로 비교합니다.</p>
     <div class="badges">
       <span class="badge">시장 <b>Jita 4-4</b></span>
       <span class="badge">출처 <b>Fuzzwork</b></span>
-      <span class="badge">실시간 시세 · 원/1B 비교</span>
+      <span class="badge">실시간 시세 · 효율 랭킹 3종</span>
     </div>
   </header>
 
   <!-- ===== 1) 시세 입력 카드 ===== -->
   <div class="card">
-    <h2><span class="n">1</span> 시세 <span class="sp"><span class="pill" id="ts">갱신 안 됨</span></span></h2>
+    <h2><span class="n">1</span> 시세 <span class="sp"><span class="pill" id="ts">미조회</span></span></h2>
     <div class="toolbar">
       <button id="btnFetch">시세 새로고침</button>
-      <span class="hint">시세칸은 읽기 전용입니다. 값은 <b>시세 새로고침</b> 또는 <b>거래 방향 드롭다운</b>으로만 채워집니다.</span>
+      <span class="hint">시세 칸은 직접 입력할 수 없습니다. <b>시세 새로고침</b> 버튼 또는 <b>거래 방향 선택</b> 시 자동으로 채워집니다.</span>
       <span id="fetchErr" class="err"></span>
     </div>
     <div class="grid3">
@@ -212,7 +215,7 @@
 
   <!-- ===== ★ 효율 랭킹 ===== -->
   <div class="card">
-    <h2><span class="n">★</span> 효율 랭킹 <span class="sp"><span class="hint">원/단위 낮을수록 효율 ↑ · 1위 강조 · Steam/웹은 정가 기준</span></span></h2>
+    <h2><span class="n">★</span> 효율 랭킹 <span class="sp"><span class="hint">원/단위 낮을수록 효율 ↑ · 1위 강조 · Steam/웹은 조회값 기준</span></span></h2>
     <div class="row">
       <div class="fld"><label>USD → 원 환율</label><input type="number" id="iUsdKrw" value="1545"></div>
       <div class="fld"><label>인젝터 체감 (보유 SP 구간)</label>
@@ -230,6 +233,10 @@
     <table><thead><tr><th class="l">방법</th><th>원 / 1M SP</th><th class="l">비고</th></tr></thead><tbody id="rankSP"></tbody></table>
     <div id="rankSPPager" class="toolbar" style="margin-top:8px;justify-content:center"></div>
     <h3 class="rh" style="margin:18px 0 8px">③ 원 / 오메가 1개월 <span class="muted">— 오메가 싸게</span></h3>
+    <div class="inline-checks">
+      <label><input type="checkbox" id="showSfExtract" checked>자가펀딩 — 스킬훈련 미포함(SP 전량 추출)</label>
+      <label><input type="checkbox" id="showSfKeepTraining" checked>자가펀딩 — 스킬훈련 포함(추출 안 함)</label>
+    </div>
     <table><thead><tr><th class="l">방법</th><th>원 / 월</th><th class="l">비고</th></tr></thead><tbody id="rankOmega"></tbody></table>
     <div id="rankOmegaPager" class="toolbar" style="margin-top:10px;justify-content:center"></div>
     <p class="hint" style="margin-top:8px">※ 웹 가격은 store.eveonline.com에서 자동 조회합니다(서버 캐시 1시간). 조회 실패 시 기본값을 사용합니다.</p>
@@ -453,7 +460,7 @@ function applyData(data){
   renderQuoteTable("qLSI",QUOTES.LSI);
   renderQuoteTable("qEXT",QUOTES.EXT);
   fillPriceFromDir("PLEX"); fillPriceFromDir("LSI"); fillPriceFromDir("EXT");
-  $("ts").textContent="갱신: "+new Date().toLocaleString("ko-KR");
+  $("ts").textContent=new Date().toLocaleTimeString("ko-KR",{hour12:false})+" 조회됨";
   $("ts").className="pill ok";
   recalc();
 }
@@ -474,7 +481,7 @@ async function refresh(candidates){
       }catch(err){ errs.push(c.label+": "+err.message); }
     }
     e.textContent="시세 가져오기 실패 ("+errs.join(" / ")+"). 잠시 후 다시 시도하세요.";
-    $("ts").textContent="갱신 실패"; $("ts").className="pill err";
+    $("ts").textContent="조회 실패"; $("ts").className="pill err";
   }finally{
     $("btnFetch").disabled=false; 
   }
@@ -605,20 +612,26 @@ function buildRankings(r){
   const pureVals = om.map(x=>x.val).filter(v=>isFinite(v)&&v>0);
   const bestOmegaMonth = pureVals.length ? Math.min(...pureVals) : NaN;
   const bestOmegaDay = bestOmegaMonth/30.4167;
-  // 스킬팜 자가펀딩 오메가 — 24mo 오메가(4,950P)+MCT(4,600P/캐릭) 풀팜, +5임플, SP 전량 추출·판매 수익으로 상쇄. 캐릭 1~3 중 최적 자동.
+  // 스킬팜 자가펀딩 오메가 — 24mo 오메가(6,600P)+MCT(4,600P/캐릭) 풀팜, +5임플, SP 전량 추출·판매 수익으로 상쇄. 캐릭 1~3 중 최적 자동.
   { const sfFloor=num("iFloor")||5000000, sfSpLsi=num("iSpLsi")||500000;
     const sfDays=24*30.4167, sfLsiPerChar=Math.floor(Math.max(0, SPDAY_OPT*sfDays - sfFloor)/sfSpLsi);
     const sfWonPerIsk=(px>0)?kpp/px:NaN; let bestN=null;
-    for(let ch=1; ch<=3; ch++){
-      const lsiTot=sfLsiPerChar*ch;
-      const incomeIsk=lsiTot*lsi*(1-r.tax) - lsiTot*r.extUnit;
-      const net=((6600+(ch-1)*4600)*kpp - incomeIsk*sfWonPerIsk)/24;
-      if(bestN===null||net<bestN.net) bestN={ch,net,lsiTot};
+    if($("showSfExtract").checked){
+      for(let ch=1; ch<=3; ch++){
+        const lsiTot=sfLsiPerChar*ch;
+        const incomeIsk=lsiTot*lsi*(1-r.tax) - lsiTot*r.extUnit;
+        const net=((6600+(ch-1)*4600)*kpp - incomeIsk*sfWonPerIsk)/24;
+        if(bestN===null||net<bestN.net) bestN={ch,net,lsiTot};
+      }
+      if(bestN && isFinite(bestN.net)){ const neg=bestN.net<0; const mctN=bestN.ch-1;
+        om.push({label:`스킬팜 자가펀딩 오메가 (${mctN?`MCT ${mctN}개·${bestN.ch}캐릭`:"오메가만 1캐릭"})`, val: neg?0.0001:bestN.net,
+          disp: neg?`이득 ₩${comma(-bestN.net)}/월`:null,
+          note:`24mo 오메가${mctN?` + MCT ${mctN}개`:""}·+5임플 풀팜 → LSI ${comma(bestN.lsiTot)}개 판매수익 차감`}); }
     }
-    if(bestN && isFinite(bestN.net)){ const neg=bestN.net<0; const mctN=bestN.ch-1;
-      om.push({label:`스킬팜 자가펀딩 오메가 (${mctN?`MCT ${mctN}개·${bestN.ch}캐릭`:"오메가만 1캐릭"})`, val: neg?0.0001:bestN.net,
-        disp: neg?`이득 ₩${comma(-bestN.net)}/월`:null,
-        note:`24mo 오메가${mctN?` + MCT ${mctN}개`:""}·+5임플 풀팜 → LSI ${comma(bestN.lsiTot)}개 판매수익 차감`}); }
+    if($("showSfKeepTraining").checked){
+      om.push({label:"스킬팜 자가펀딩 오메가 — 훈련 유지 (오메가만 1캐릭)", val:(6600*kpp)/24,
+        note:"24mo 오메가 · SP 추출 없이 훈련 보존"});
+    }
   }
   renderRankPaged("rankOmega", om);
 
