@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Standalone public PLEX farming efficiency calculator."""
+"""Nisuwaz tool hub: serves the hub page, each tool page, and the PLEX calculator's data proxies."""
 import json
 import os
 import re
@@ -105,14 +105,31 @@ def _cached_json_bytes_response(handler, body, stale=False, max_age=UPSTREAM_CAC
     handler.wfile.write(body)
 
 
-def _static_response(handler, path):
-    body = path.read_bytes()
+# Only these exact request paths are served from disk; nothing else on disk is reachable.
+HTML = "text/html; charset=utf-8"
+PNG = "image/png"
+STATIC_ROUTES = {
+    "/": ("hub.html", HTML, "no-store"),
+    "/index.html": ("hub.html", HTML, "no-store"),
+    "/plex": ("plex.html", HTML, "no-store"),
+    "/plex/": ("plex.html", HTML, "no-store"),
+    "/fridge": ("fridge.html", HTML, "no-store"),
+    "/fridge/": ("fridge.html", HTML, "no-store"),
+    "/icons/fridge.png": ("icons/fridge.png", PNG, "public, max-age=86400"),
+    "/icons/plex.png": ("icons/plex.png", PNG, "public, max-age=86400"),
+}
+
+
+def _static_response(handler, rel_path, content_type, cache_control, head=False):
+    body = (ROOT / rel_path).read_bytes()
     handler.send_response(200)
-    handler.send_header("Content-Type", "text/html; charset=utf-8")
-    handler.send_header("Cache-Control", "no-store")
+    handler.send_header("Content-Type", content_type)
+    handler.send_header("Cache-Control", cache_control)
+    handler.send_header("X-Content-Type-Options", "nosniff")
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
-    handler.wfile.write(body)
+    if not head:
+        handler.wfile.write(body)
 
 
 def _fetch_steam_omega():
@@ -256,8 +273,8 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         params = urllib.parse.parse_qs(parsed.query)
 
-        if path in ("/", "/index.html"):
-            _static_response(self, ROOT / "index.html")
+        if path in STATIC_ROUTES:
+            _static_response(self, *STATIC_ROUTES[path])
             return
         if path == "/healthz":
             _json_response(self, 200, {"ok": True})
@@ -289,6 +306,22 @@ class Handler(BaseHTTPRequestHandler):
             _json_response(self, 200, calculate(params))
             return
         _json_response(self, 404, {"error": "not found"})
+
+    def do_HEAD(self):
+        path = urllib.parse.urlsplit(self.path).path
+        if path in STATIC_ROUTES:
+            _static_response(self, *STATIC_ROUTES[path], head=True)
+            return
+        if path == "/healthz":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_response(404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def log_message(self, fmt, *args):
         return

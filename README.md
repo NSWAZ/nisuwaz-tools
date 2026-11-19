@@ -1,14 +1,18 @@
 # Nisuwaz Tools
 
-Standalone public tools for EVE Online.
+Public EVE Online tools for Korean players. The home page (`/`) is a hub that links to each tool.
 
-## Included tool
+## Included tools
 
-- PLEX farming efficiency calculator: compares direct PLEX sale against Omega + MCT skill farming using public market data.
+- `/fridge` — 냉장고 계산기 (fitting shopping list): fits × count − hangar = what to buy in Jita 4-4, with prices, volume, and a Multibuy list. Calls ESI and Fuzzwork directly from the browser.
+- `/plex` — PLEX 현질 효율 계산기: compares direct PLEX sale against Omega + MCT skill farming using public market data.
+
+Adding a tool: add its page and 256×256 icon, list both in `STATIC_ROUTES` in `app.py`, add a link on `hub.html`, and copy the files in the `Dockerfile`.
 
 ## Data sources
 
-- Fuzzwork market aggregates for Jita 4-4 prices of PLEX, Large Skill Injector, and Skill Extractor.
+- Fuzzwork market aggregates for Jita 4-4 prices (PLEX calculator via the server proxy, 냉장고 계산기 directly).
+- EVE ESI for item name → ID lookup and packaged volume (냉장고 계산기).
 - Steam public app details API for KRW Omega pricing when available.
 - EVE Online web store prices for USD PLEX and Omega ranking comparisons when available.
 
@@ -24,11 +28,18 @@ Open `http://localhost:8080/`.
 
 Useful endpoints:
 
-- `GET /` — calculator page
+- `GET /` — tool hub
+- `GET /fridge`, `GET /plex` — tool pages
 - `GET /aggregates` — CORS-friendly Fuzzwork proxy
 - `GET /steamomega` — public Steam Omega price proxy
 - `GET /webstore` — public EVE web-store PLEX and Omega price proxy
 - `GET /api/calculate` — JSON calculation with default inputs
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests
+```
 
 ## Docker
 
