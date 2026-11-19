@@ -1,5 +1,7 @@
 .git
 .github
+.claude
+.impeccable
 __pycache__/
 *.py[cod]
 *.log
@@ -7,5 +9,6 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
-.impeccable
 tests
+web/node_modules
+web/dist

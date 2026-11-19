@@ -1,0 +1,99 @@
+# Static file server for tools.nisuwaz.com (runs behind Cloudflare → Caddy).
+# Every response is a file on disk: the built site under /srv/site, and the
+# market snapshots the refresher writes under /srv/data. No request reaches an
+# upstream service, so visitor traffic cannot multiply outbound calls.
+{
+	admin off
+	auto_https off
+	persist_config off
+	servers {
+		timeouts {
+			read_header 5s
+			read_body 10s
+			write 30s
+			idle 60s
+		}
+		max_header_size 16KB
+	}
+}
+
+:{$PORT:8080} {
+	root * /srv/site
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		Cross-Origin-Opener-Policy same-origin
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://images.evetech.net; font-src 'self'; connect-src 'self' https://esi.evetech.net https://market.fuzzwork.co.uk; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'"
+		-Server
+	}
+
+	# `handle` blocks run before a bare `respond`, so the method gate is a
+	# `handle` of its own, listed first.
+	@unsupported not method GET HEAD
+	handle @unsupported {
+		header Allow "GET, HEAD"
+		respond 405
+	}
+
+	handle /healthz {
+		header Content-Type "application/json"
+		header Cache-Control no-store
+		respond `{"ok":true}` 200
+	}
+
+	handle /aggregates {
+		root * /srv/data
+		rewrite * /aggregates.json
+		header Content-Type "application/json; charset=utf-8"
+		header Cache-Control "public, max-age=60"
+		file_server
+	}
+
+	handle /steamomega {
+		root * /srv/data
+		rewrite * /steamomega.json
+		header Content-Type "application/json; charset=utf-8"
+		header Cache-Control "public, max-age=300"
+		file_server
+	}
+
+	@app path / /index.html /plex /plex/ /fridge /fridge/
+	handle @app {
+		rewrite * /index.html
+		header Cache-Control no-cache
+		file_server
+	}
+
+	handle /assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server {
+			hide .*
+		}
+	}
+
+	handle {
+		header Cache-Control "public, max-age=86400"
+		file_server {
+			hide .* /srv/site/index.html
+		}
+	}
+
+	# Unknown pages get the app's own "not on the map" screen with a real 404.
+	handle_errors 404 {
+		# Never let an error inherit the long-lived asset cache header.
+		header Cache-Control no-store
+		@page not path /aggregates /steamomega /assets/*
+		handle @page {
+			rewrite * /index.html
+			header Cache-Control no-cache
+			file_server {
+				status 404
+			}
+		}
+		respond "Not Found" 404
+	}
+}

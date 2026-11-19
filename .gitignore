@@ -6,3 +6,6 @@ __pycache__/
 venv/
 .DS_Store
 /.claude/worktrees/
+/web/node_modules/
+/web/dist/
+/.impeccable/
