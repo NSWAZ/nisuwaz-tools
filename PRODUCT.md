@@ -32,8 +32,8 @@ web
 
 ## Capabilities and Constraints
 
-- 서버: Python 표준 라이브러리 `app.py`(ThreadingHTTPServer), Docker 이미지 `goemktg/nisuwaz-tools`, `v*` 태그로 GitHub Actions가 빌드. 빌드 도구 없음, 정적 HTML.
-- 시세: Fuzzwork 지타 4-4 집계, ESI(이름→ID, 부피), Steam 오메가 원화 가격. Fuzzwork·ESI는 교차 출처 허용(`*`) 확인(2026-11-19)이라 브라우저 직접 호출 가능. 기존 계산기는 서버 중계(`/aggregates`, `/steamomega`, 5분 캐시)를 쓴다.
+- 서버: React + Vite + TypeScript 정적 사이트를 이미지 안 Caddy가 제공하고, `refresher/refresh.py`가 시세를 주기적으로 받아 JSON 파일로 쓴다. 방문자 요청은 외부로 나가지 않는다. Docker 이미지 `goemktg/nisuwaz-tools`, `v*` 태그로 GitHub Actions가 빌드.
+- 시세: Fuzzwork 지타 4-4 집계, ESI(이름→ID, 부피), Steam 오메가 원화 가격. Fuzzwork·ESI는 교차 출처 허용(`*`) 확인(2026-11-19)이라 냉장고 계산기는 브라우저에서 직접 호출한다. PLEX 계산기는 갱신기가 쓴 `/aggregates`(5분 주기), `/steamomega`(30분 주기) 파일을 읽고, 30분 넘게 오래되면 화면에 경고한다.
 - 로그인·DB·개인 저장 없음. 입력값은 브라우저 저장소(`localStorage`)에만 남는다.
 - 공개 저장소(github.com/goemktg/nisuwaz-tools): 외부 공개 전 보안감사 대상.
 - **추후 할 일(2026-11-19 사용자 메모)**: SeAT API로 SDE 같은 정적 데이터(아이템 이름·ID·부피 등)를 SeAT 데이터에서 받아 쓰도록 중앙화. 지금 ESI 직접 호출을 대체할 후보. 이번 리디자인 범위 밖.
