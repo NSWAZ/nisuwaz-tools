@@ -4,7 +4,6 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -15,7 +14,7 @@ import app  # noqa: E402
 class RouteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
+        cls.server = app.BoundedThreadingHTTPServer(("127.0.0.1", 0), app.Handler)
         cls.base = f"http://127.0.0.1:{cls.server.server_address[1]}"
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()

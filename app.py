@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import socket
 import threading
 import time
 import urllib.parse
@@ -28,31 +29,75 @@ WEBSTORE_OFFER_RE = re.compile(
     re.DOTALL,
 )
 
+UPSTREAM_FAILURE_BACKOFF_SECONDS = 30
+REQUEST_TIMEOUT_SECONDS = 15
+REQUEST_READ_DEADLINE_SECONDS = 10
+MAX_CONNECTIONS = 64
+SERVER_BUSY_RESPONSE = (
+    b"HTTP/1.0 503 Service Unavailable\r\n"
+    b"Retry-After: 1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+)
+
+
+class UpstreamUnavailable(Exception):
+    """The upstream failed recently, or a retry is already running, and no cached body exists."""
+
 
 class UpstreamCache:
+    """Caches one upstream body; at most one fetch runs, and failures back off.
+
+    Only a true cold start (never fetched, never failed) waits for another caller's
+    fetch. Otherwise callers get the stale body or UpstreamUnavailable at once.
+    After a failed fetch, no new fetch starts until the backoff window passes.
+    Fields are written under the lock; the unlocked reads are safe under the GIL
+    because fetched_at is set before body and body is never reset to None.
+    """
+
     def __init__(self, ttl=UPSTREAM_CACHE_SECONDS):
         self.ttl = ttl
         self.lock = threading.Lock()
         self.body = None
-        self.fetched_at = 0.0
+        self.fetched_at = None
+        self.failed_at = None
+
+    def _fresh(self):
+        return self.body is not None and time.monotonic() - self.fetched_at < self.ttl
+
+    def _backing_off(self):
+        return self.failed_at is not None and time.monotonic() - self.failed_at < UPSTREAM_FAILURE_BACKOFF_SECONDS
 
     def get(self, fetcher):
-        now = time.time()
-        if self.body is not None and now - self.fetched_at < self.ttl:
+        if self._fresh():
             return self.body, False
-        with self.lock:
-            now = time.time()
-            if self.body is not None and now - self.fetched_at < self.ttl:
+        if self.body is not None:
+            if not self.lock.acquire(blocking=False):
+                return self.body, True
+        elif self.failed_at is not None:
+            if not self.lock.acquire(blocking=False):
+                raise UpstreamUnavailable("upstream retry already in progress")
+        else:
+            self.lock.acquire()
+        try:
+            if self._fresh():
                 return self.body, False
+            if self._backing_off():
+                if self.body is not None:
+                    return self.body, True
+                raise UpstreamUnavailable("upstream recently failed")
             try:
                 body = fetcher()
             except Exception:
+                self.failed_at = time.monotonic()
                 if self.body is not None:
                     return self.body, True
                 raise
+            # fetched_at first: unlocked readers check body before using fetched_at.
+            self.fetched_at = time.monotonic()
             self.body = body
-            self.fetched_at = time.time()
+            self.failed_at = None
             return body, False
+        finally:
+            self.lock.release()
 
 
 MARKET_CACHE = UpstreamCache()
@@ -268,6 +313,37 @@ def calculate(params):
 
 
 class Handler(BaseHTTPRequestHandler):
+    # timeout applies per socket operation. request_read_deadline caps the total
+    # time to receive the request line and headers, so a client dripping one byte
+    # at a time cannot hold a connection slot; it is cancelled once the request is
+    # parsed, so slow upstream fetches while handling are not cut off.
+    # This relies on HTTP/1.0 (one request per connection); with HTTP/1.1 keep-alive,
+    # later requests on the connection would need the deadline re-armed.
+    timeout = REQUEST_TIMEOUT_SECONDS
+    request_read_deadline = REQUEST_READ_DEADLINE_SECONDS
+
+    def setup(self):
+        super().setup()
+        self._deadline = threading.Timer(self.request_read_deadline, self._abort_connection)
+        self._deadline.daemon = True
+        self._deadline.start()
+
+    def _abort_connection(self):
+        try:
+            self.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+    def parse_request(self):
+        # The stdlib reads the headers inside parse_request, so cancel only after it.
+        parsed = super().parse_request()
+        self._deadline.cancel()
+        return parsed
+
+    def finish(self):
+        self._deadline.cancel()
+        super().finish()
+
     def do_GET(self):
         parsed = urllib.parse.urlsplit(self.path)
         path = parsed.path
@@ -327,6 +403,41 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
+class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer that handles at most max_connections connections at once.
+
+    When every slot is busy, a new connection gets a best-effort 503 and is closed
+    right away instead of pinning another thread, and the accept loop never blocks
+    (so shutdown() and other clients are not held up). The cap is global, not per
+    client: per-client connection limits belong to the fronting reverse proxy.
+    """
+
+    def __init__(self, server_address, handler_class, max_connections=MAX_CONNECTIONS):
+        self._slots = threading.BoundedSemaphore(max_connections)
+        super().__init__(server_address, handler_class)
+
+    def process_request(self, request, client_address):
+        if not self._slots.acquire(blocking=False):
+            try:
+                request.setblocking(False)
+                request.send(SERVER_BUSY_RESPONSE)
+            except OSError:
+                pass
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
+
+
 if __name__ == "__main__":
     print(f"nisuwaz-tools listening on {BIND}:{PORT}")
-    ThreadingHTTPServer((BIND, PORT), Handler).serve_forever()
+    BoundedThreadingHTTPServer((BIND, PORT), Handler).serve_forever()

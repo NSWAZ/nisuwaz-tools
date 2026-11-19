@@ -47,3 +47,7 @@ python3 -m unittest discover -s tests
 docker build -t goemktg/nisuwaz-tools .
 docker run --rm -p 8080:8080 -e PORT=8080 goemktg/nisuwaz-tools
 ```
+
+## Deployment limits
+
+The server handles at most 64 connections at once (extra connections are closed, with a best-effort `503`), gives each client 10 s to send its request headers, and backs off for 30 s after an upstream fetch fails (serving the last cached data when it has any). These caps are global, not per client, so put the container behind a reverse proxy that enforces per-client connection limits and header timeouts rather than publishing port 8080 directly to the internet.
