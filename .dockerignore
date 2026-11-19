@@ -4,8 +4,8 @@
 .impeccable
 __pycache__/
 *.py[cod]
-*.log
-.env
+**/*.log
+**/.env*
 .venv/
 venv/
 .DS_Store

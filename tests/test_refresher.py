@@ -1,7 +1,10 @@
-"""Tests for the market-data refresher (no network: fetchers are stubbed)."""
+"""Tests for the market-data refresher (no external network: fetchers are stubbed or loopback)."""
 import json
+import socket
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -54,6 +57,12 @@ class BuildAggregatesTests(unittest.TestCase):
                      GOOD_AGG.replace(b'"100"', b"NaN"), GOOD_AGG.replace(b'"9000000"', b"Infinity")):
             with self.subTest(body=body[:60]), self.assertRaises(refresh.UpstreamError):
                 refresh.build_aggregates(body)
+
+    def test_publishes_the_validated_number_not_the_upstream_token(self):
+        out = json.loads(refresh.build_aggregates(agg_with("44992", "buy", "max", "47_13_000")))
+        self.assertEqual(out["44992"]["buy"]["max"], "4713000")
+        out = json.loads(refresh.build_aggregates(agg_with("44992", "buy", "max", "4713000.50")))
+        self.assertEqual(out["44992"]["buy"]["max"], "4713000.5")
 
     def test_keeps_only_the_quotes_the_page_reads(self):
         data = json.loads(GOOD_AGG)
@@ -171,41 +180,70 @@ class FetchLimitTests(unittest.TestCase):
             def __exit__(self, *exc):
                 return False
 
-            def read(self, n):
+            def read1(self, n):
                 return b"x" * n
 
-        original = refresh.urllib.request.urlopen
-        refresh.urllib.request.urlopen = lambda req, timeout: FakeResponse()
+        original = refresh._OPENER.open
+        refresh._OPENER.open = lambda req, timeout: FakeResponse()
         try:
             with self.assertRaises(refresh.UpstreamError):
                 refresh.fetch("https://example.invalid/")
         finally:
-            refresh.urllib.request.urlopen = original
+            refresh._OPENER.open = original
 
-    def test_gives_up_on_a_slow_drip_response(self):
-        clock = [0.0]
+    def _drip_server(self, head, body, gap):
+        """Loopback server that sends `head` then `body` one byte every `gap` seconds."""
+        srv = socket.socket()
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        stop = threading.Event()
 
-        class Drip:
-            def __enter__(self):
-                return self
+        def serve():
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            with conn:
+                try:
+                    conn.recv(4096)
+                    for b in head + body:
+                        if stop.is_set():
+                            return
+                        conn.sendall(bytes([b]))
+                        time.sleep(gap)
+                except OSError:
+                    pass
 
-            def __exit__(self, *exc):
-                return False
+        t = threading.Thread(target=serve, daemon=True)
+        t.start()
+        self.addCleanup(lambda: (stop.set(), srv.close(), t.join(5)))
+        return f"http://127.0.0.1:{srv.getsockname()[1]}/"
 
-            def read(self, n):
-                clock[0] += 5  # every small chunk takes 5 s, never ending
-                return b"x"
+    def _assert_gives_up_in_time(self, url):
+        started = time.monotonic()
+        with self.assertRaises(refresh.UpstreamError):
+            refresh.fetch(url, timeout=1)
+        self.assertLess(time.monotonic() - started, 2.5)
 
-        original_open, original_clock = refresh.urllib.request.urlopen, refresh.monotonic
-        refresh.urllib.request.urlopen = lambda req, timeout: Drip()
-        refresh.monotonic = lambda: clock[0]
-        try:
-            with self.assertRaises(refresh.UpstreamError):
-                refresh.fetch("https://example.invalid/", timeout=15)
-            self.assertLessEqual(clock[0], 25)
-        finally:
-            refresh.urllib.request.urlopen, refresh.monotonic = original_open, original_clock
+    def test_gives_up_on_a_slow_drip_body(self):
+        body = b'{"drip":"' + b"x" * 40 + b'"}'
+        head = b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n" % len(body)
+        self._assert_gives_up_in_time(self._drip_server(head, body, 0.1))
 
+    def test_gives_up_on_slow_drip_headers(self):
+        head = b"HTTP/1.1 200 OK\r\nX-Pad: " + b"y" * 40 + b"\r\nContent-Length: 2\r\n\r\n"
+        self._assert_gives_up_in_time(self._drip_server(head, b"{}", 0.1))
+
+    def test_refuses_redirects_to_non_https(self):
+        head = b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/x\r\nContent-Length: 0\r\n\r\n"
+        with self.assertRaises(refresh.UpstreamError):
+            refresh.fetch(self._drip_server(head, b"", 0), timeout=5)
+
+    def test_fast_response_still_succeeds_and_timer_is_cleared(self):
+        head = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n"
+        self.assertEqual(refresh.fetch(self._drip_server(head, b"{}", 0), timeout=5), b"{}")
+        self.assertEqual(refresh.signal.getitimer(refresh.signal.ITIMER_REAL), (0.0, 0.0))
 
 if __name__ == "__main__":
     unittest.main()

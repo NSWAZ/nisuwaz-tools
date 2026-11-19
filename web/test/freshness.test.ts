@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ago, isStale, stamp, STALE_MS } from "../src/lib/format";
 import { isSteamLive, loadItemPrices } from "../src/lib/market";
-import { idOf, needsFetch, priceOf, type PriceCache } from "../src/lib/fridge";
+import { computeShopping, idOf, needsFetch, parseFit, parseInv, priceOf, type PriceCache } from "../src/lib/fridge";
 
 const at = (s: string) => new Date(s);
 
@@ -37,6 +37,26 @@ describe("isSteamLive", () => {
     for (const final of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(isSteamLive({ "1": { final, initial: 26200, disc: 0 } })).toBe(false);
     }
+  });
+});
+
+describe("pasted names never touch shared prototypes", () => {
+  it("keeps '__proto__' and 'constructor' lines as ordinary items", () => {
+    const fit = { id: "a", text: "[Ferox, X]\n__proto__\nconstructor x2\nDamage Control II", qty: 1, collapsed: false };
+    const res = computeShopping([fit], "__proto__\t1", false, { ids: {}, prices: {}, vol: {} });
+    expect(({} as Record<string, unknown>).qty).toBeUndefined();
+    expect((Object as unknown as Record<string, unknown>).qty).toBeUndefined();
+    const byName = Object.fromEntries(res.rows.map((r) => [r.name, r]));
+    expect(byName["__proto__"]).toMatchObject({ need: 1, have: 1, buy: 0 });
+    expect(byName["constructor"]).toMatchObject({ need: 2, have: 0, buy: 2 });
+  });
+  it("skips absurdly long lines instead of running the quantity regex on them", () => {
+    const long = "Damage Control II" + " ".repeat(20000) + "x";
+    const p = parseFit("[Ferox, X]\n" + long + "\nDamage Control II", false);
+    expect(Object.keys(p.map)).toEqual(["damage control ii"]);
+    expect(p.skipped.length).toBe(1);
+    expect(p.skipped[0].length).toBeLessThan(100);
+    expect(Object.keys(parseInv(long + "\nSpike M x5"))).toEqual(["spike m"]);
   });
 });
 

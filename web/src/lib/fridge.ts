@@ -38,6 +38,18 @@ export function qtyOf(s: unknown): number {
   return /^\d+$/.test(d) ? parseInt(d, 10) : NaN;
 }
 
+/** A name-keyed map with no prototype, so pasted names like "__proto__" are ordinary keys. */
+export function newCountMap(): CountMap {
+  return Object.create(null) as CountMap;
+}
+
+/** Longer lines are not item lines; skipping them also keeps the quantity regexes linear. */
+export const MAX_LINE = 300;
+
+function clip(line: string): string {
+  return line.length > 60 ? line.slice(0, 60) + "…" : line;
+}
+
 export function addCount(map: CountMap, rawName: string, qty: number): void {
   const name = rawName.replace(/\s+/g, " ").trim();
   if (!name || !(qty > 0)) return;
@@ -55,13 +67,17 @@ export interface ParsedFit {
 
 /** EFT / in-game "Copy to clipboard" fitting text. */
 export function parseFit(text: string, withHull: boolean): ParsedFit {
-  const map: CountMap = {};
+  const map = newCountMap();
   const skipped: string[] = [];
   let hullName = "";
   let fitName = "";
   text.split(/\r?\n/).forEach((raw) => {
     let line = raw.trim();
     if (!line) return;
+    if (line.length > MAX_LINE) {
+      skipped.push(clip(line));
+      return;
+    }
     if (/^\[empty .*slot\]$/i.test(line)) return;
     const hull = line.match(/^\[([^,\]]+),\s*(.*)\]$/);
     if (hull) {
@@ -91,9 +107,9 @@ export function parseFit(text: string, withHull: boolean): ParsedFit {
 
 /** Hangar list view copy (tab separated), or "Name x3" / "3 Name" lines. */
 export function parseInv(text: string): CountMap {
-  const map: CountMap = {};
+  const map = newCountMap();
   text.split(/\r?\n/).forEach((raw) => {
-    if (!raw.trim()) return;
+    if (!raw.trim() || raw.length > MAX_LINE) return;
     if (raw.indexOf("\t") >= 0) {
       const p = raw.split("\t");
       const q = qtyOf(p[1]);
@@ -197,7 +213,7 @@ export interface ShoppingResult {
 }
 
 export function computeShopping(fits: Fit[], inv: string, withHull: boolean, cache: PriceCache): ShoppingResult {
-  const need: CountMap = {};
+  const need = newCountMap();
   const skipped: string[] = [];
   let fitValueTotal = 0;
   let fitValueKnown = true;

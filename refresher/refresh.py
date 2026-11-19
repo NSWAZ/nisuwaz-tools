@@ -12,9 +12,9 @@ import signal
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
-from time import monotonic
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/srv/data"))
 REFRESH_SECONDS = max(60, int(os.environ.get("REFRESH_SECONDS", "300")))
@@ -43,27 +43,48 @@ class UpstreamError(Exception):
     """The upstream answered with something we will not publish."""
 
 
-def fetch(url, timeout=TIMEOUT_SECONDS):
-    """GET url; the whole exchange must finish within timeout seconds.
+class _HttpsOnlyRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect only to another https URL (never a downgrade or another scheme)."""
 
-    urlopen's timeout bounds each socket operation only, so a server dripping a
-    byte at a time could stall the loop; the read loop enforces a deadline.
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urllib.parse.urlsplit(newurl).scheme != "https":
+            raise UpstreamError(f"refusing redirect to {newurl!r}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_HttpsOnlyRedirects)
+
+
+def fetch(url, timeout=TIMEOUT_SECONDS):
+    """GET url; the whole exchange (connect, redirects, headers, body) ends within timeout seconds.
+
+    urlopen's timeout bounds each socket operation only, and a server dripping a
+    byte at a time could hold a read open for hours, so a wall-clock timer
+    (SIGALRM) bounds the whole call. The refresher calls fetch from its single
+    main thread only.
     """
-    deadline = monotonic() + timeout
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-    chunks, size = [], 0
-    with urllib.request.urlopen(req, timeout=timeout) as res:
-        while True:
-            if monotonic() > deadline:
-                raise UpstreamError(f"response took longer than {timeout} s")
-            chunk = res.read(min(65536, MAX_BYTES + 1 - size))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            size += len(chunk)
-            if size > MAX_BYTES:
-                raise UpstreamError(f"response larger than {MAX_BYTES} bytes")
-    return b"".join(chunks)
+
+    def expire(*_):
+        raise UpstreamError(f"response took longer than {timeout} s")
+
+    previous = signal.signal(signal.SIGALRM, expire)
+    signal.setitimer(signal.ITIMER_REAL, timeout)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+        chunks, size = [], 0
+        with _OPENER.open(req, timeout=timeout) as res:
+            while True:
+                chunk = res.read1(min(65536, MAX_BYTES + 1 - size))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                size += len(chunk)
+                if size > MAX_BYTES:
+                    raise UpstreamError(f"response larger than {MAX_BYTES} bytes")
+        return b"".join(chunks)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def _reject_constant(name):
@@ -120,7 +141,9 @@ def build_aggregates(raw):
                     raise UpstreamError(f"aggregates {type_id} {side}.{name}: {err}") from err
                 if num < 0:
                     raise UpstreamError(f"aggregates {type_id} {side}.{name} is negative")
-                kept[side][name] = fields[name]
+                # Publish the validated number, not the upstream token: Python float()
+                # accepts forms ("4_713_000") that the browser's parseFloat reads differently.
+                kept[side][name] = format(num, ".15g")
         for side, name in (("buy", "max"), ("sell", "min")):
             if not float(kept[side].get(name, 0)) > 0:
                 raise UpstreamError(f"aggregates {type_id} {side}.{name} is not positive")

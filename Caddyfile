@@ -17,10 +17,8 @@
 	}
 }
 
-:{$PORT:8080} {
-	root * /srv/site
-	encode zstd gzip
-
+# Applied to normal responses and again in handle_errors (errors skip site-level headers).
+(security_headers) {
 	header {
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
@@ -30,6 +28,13 @@
 		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://images.evetech.net; font-src 'self'; connect-src 'self' https://esi.evetech.net https://market.fuzzwork.co.uk; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'"
 		-Server
 	}
+}
+
+:{$PORT:8080} {
+	root * /srv/site
+	encode zstd gzip
+
+	import security_headers
 
 	# `handle` blocks run before a bare `respond`, so the method gate is a
 	# `handle` of its own, listed first.
@@ -84,6 +89,7 @@
 
 	# Unknown pages get the app's own "not on the map" screen with a real 404.
 	handle_errors 404 {
+		import security_headers
 		# Never let an error inherit the long-lived asset cache header.
 		header Cache-Control no-store
 		@page not path /aggregates /steamomega /assets/*

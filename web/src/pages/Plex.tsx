@@ -64,7 +64,7 @@ function loadSaved() {
   for (const [k, v] of Object.entries(s.farm ?? {})) {
     const key = k as keyof FarmInputs;
     if (key === "boosterOn") farm.boosterOn = v === true;
-    else if (key in DEFAULT_FARM && finite(v)) (farm[key] as number) = v;
+    else if (Object.hasOwn(DEFAULT_FARM, key) && finite(v)) (farm[key] as number) = v;
   }
   const at = s.fetchedAt ? new Date(s.fetchedAt) : null;
   return {
