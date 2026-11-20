@@ -255,8 +255,8 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
     const sPrice = sL ? sL.final : t.steam;
     const sNote = sL
       ? sL.disc > 0
-        ? `₩${comma(sPrice)} · ${sL.disc}% 세일(라이브)`
-        : `₩${comma(sPrice)} (라이브)`
+        ? `₩${comma(sPrice)} · ${sL.disc}% 세일`
+        : `₩${comma(sPrice)}`
       : `₩${comma(t.steam)} 정가`;
     om.push({ id: `steam-omega-${t.mo}`, label: `Steam 직접 ${t.mo}개월`, val: sPrice / t.mo, note: sNote });
     om.push({

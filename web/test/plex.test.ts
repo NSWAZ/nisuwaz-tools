@@ -34,7 +34,9 @@ function legacyRanks(setup: string): { isk: LegacyRow[]; sp: LegacyRow[]; omega:
 }
 
 const strip = (rows: RankRow[]) => rows.map(({ label, val, note, disp }) => ({ label, val, note, disp: disp ?? null }));
-const strip2 = (rows: LegacyRow[]) => rows.map(({ label, val, note, disp }) => ({ label, val, note, disp: disp ?? null }));
+// The new page drops the original's "(라이브)" marker on live Steam prices (the band footnote says they are live).
+const unlive = (note: string) => note.replace(/ ?\(라이브\)$/, "");
+const strip2 = (rows: LegacyRow[]) => rows.map(({ label, val, note, disp }) => ({ label, val, note: unlive(note), disp: disp ?? null }));
 
 function ported(prices: Prices, farm: FarmInputs, usdKrw: number, injectorSp: number, steamLive: SteamLive | null) {
   return buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive });
