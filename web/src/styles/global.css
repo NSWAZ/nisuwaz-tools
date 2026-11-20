@@ -318,12 +318,6 @@ input[type="checkbox"] {
   line-height: 1.9;
   text-align: center;
 }
-.site-foot a {
-  color: var(--ink-2);
-}
-.site-foot .keep {
-  white-space: nowrap;
-}
 .tool-page {
   min-height: 100svh;
   display: grid;

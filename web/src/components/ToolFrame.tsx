@@ -34,13 +34,6 @@ export function Starfield() {
 export function SiteFooter() {
   return (
     <footer className="site-foot">
-      <p>
-        <span className="keep">로그인 없음 · 공개 시세만 사용</span> ·{" "}
-        <span className="keep">
-          <a href="https://nisuwaz.com">nisuwaz.com</a> · <a href="https://fit.nisuwaz.com">fit</a> ·{" "}
-          <a href="https://doctrine.nisuwaz.com">doctrine</a>
-        </span>
-      </p>
       <p>EVE Online 관련 자료와 이름은 CCP hf.의 저작물입니다.</p>
     </footer>
   );
