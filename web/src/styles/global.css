@@ -314,6 +314,7 @@ input[type="checkbox"] {
   fill: #dfe8ff;
 }
 .twinkle {
+  opacity: 0.35;
   animation: twinkle 4s ease-in-out infinite;
 }
 .tw-1 {
@@ -332,9 +333,14 @@ input[type="checkbox"] {
   animation-duration: 4.7s;
   animation-delay: -3.8s;
 }
+/* Mostly dim, flaring to full brightness once per beat (the sky itself sits at 0.6). */
 @keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.12;
+  }
   50% {
-    opacity: 0.2;
+    opacity: 1;
   }
 }
 .meteor {

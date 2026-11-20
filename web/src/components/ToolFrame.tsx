@@ -45,7 +45,12 @@ export function Starfield() {
       <g className="sky">{still.map(dot)}</g>
       {Array.from({ length: TWINKLE_GROUPS }, (_, g) => (
         <g key={g} className={`sky twinkle tw-${g}`}>
-          {twinkling.filter((_, i) => i % TWINKLE_GROUPS === g).map(dot)}
+          {twinkling
+            .filter((_, i) => i % TWINKLE_GROUPS === g)
+            .map((st, i) => (
+              // Twinklers are drawn bright and a little larger; the group fades them in and out.
+              <circle key={i} cx={st.x.toFixed(1)} cy={st.y.toFixed(1)} r={(Math.max(st.r, 0.9) * 1.35).toFixed(2)} />
+            ))}
         </g>
       ))}
       {/* The tail fades toward the origin; each line flies along its own +x once per cycle. */}
