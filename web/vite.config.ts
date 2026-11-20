@@ -1,7 +1,7 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
-// Local dev: /aggregates and /steamomega are files the refresher writes in production.
+// Local dev: /aggregates, /steamomega and /evestore are files the refresher writes in production.
 // Point the dev server at a running container (docker run -p 8080:8080 ...) when needed.
 export default defineConfig({
   plugins: [react()],
@@ -17,6 +17,7 @@ export default defineConfig({
     proxy: {
       "/aggregates": "http://127.0.0.1:8080",
       "/steamomega": "http://127.0.0.1:8080",
+      "/evestore": "http://127.0.0.1:8080",
     },
   },
   test: {

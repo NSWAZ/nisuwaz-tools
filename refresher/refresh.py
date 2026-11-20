@@ -1,13 +1,14 @@
 """Fetch public market data on a timer and write it as static JSON files.
 
 Visitors never trigger an upstream request: Caddy serves the files this loop
-writes (/aggregates, /steamomega), and their modification time tells the page
-how old the data is. A failed fetch leaves the previous file in place.
+writes (/aggregates, /steamomega, /evestore), and their modification time tells
+the page how old the data is. A failed fetch leaves the previous file in place.
 """
 import json
 import logging
 import math
 import os
+import re
 import signal
 import sys
 import tempfile
@@ -20,6 +21,8 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "/srv/data"))
 REFRESH_SECONDS = max(60, int(os.environ.get("REFRESH_SECONDS", "300")))
 # Steam prices change rarely; refresh them every STEAM_EVERY market cycles.
 STEAM_EVERY = max(1, int(os.environ.get("STEAM_EVERY", "6")))
+# The EVE web store changes prices rarely; every STORE_EVERY cycles (6 h by default).
+STORE_EVERY = max(1, int(os.environ.get("STORE_EVERY", "72")))
 
 FUZZWORK_URL = os.environ.get(
     "FUZZWORK_AGGREGATES_URL",
@@ -31,6 +34,9 @@ MARKET_TYPES = (PLEX_TYPE, "40520", "40519")
 QUOTE_FIELDS = ("max", "min")
 STEAM_OMEGA_APPS = {1: 695740, 3: 695741, 6: 695742, 12: 695743, 24: 1983081}
 STEAM_URL = "https://store.steampowered.com/api/appdetails?appids={app}&cc=kr&filters=price_overview"
+EVE_STORE_URL = "https://store.eveonline.com/"
+OMEGA_MONTHS = (1, 3, 6, 12, 24)
+MAX_USD = 10_000
 
 USER_AGENT = "nisuwaz-tools/2.0"
 TIMEOUT_SECONDS = 15
@@ -55,7 +61,7 @@ class _HttpsOnlyRedirects(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(_HttpsOnlyRedirects)
 
 
-def fetch(url, timeout=TIMEOUT_SECONDS):
+def fetch(url, timeout=TIMEOUT_SECONDS, accept="application/json"):
     """GET url; the whole exchange (connect, redirects, headers, body) ends within timeout seconds.
 
     urlopen's timeout bounds each socket operation only, and a server dripping a
@@ -70,7 +76,7 @@ def fetch(url, timeout=TIMEOUT_SECONDS):
     previous = signal.signal(signal.SIGALRM, expire)
     signal.setitimer(signal.ITIMER_REAL, timeout)
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
         chunks, size = [], 0
         with _OPENER.open(req, timeout=timeout) as res:
             while True:
@@ -198,6 +204,100 @@ def build_steam_omega(fetcher=fetch, previous=None):
     return _dumps(out, ensure_ascii=False)
 
 
+# ---- EVE web store ----
+# The store has no public price API. Its Next.js page embeds every offer as JSON
+# inside `self.__next_f.push([1,"<js string>"])` script chunks; each offer is an
+# object that starts with {"sysId": ... and carries a "pricing" object.
+_RSC_CHUNK = re.compile(r'self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)')
+_OFFER_START = '{"sysId":'
+_OMEGA_TITLE = re.compile(r"^\s*(\d+)\s*(?:m|months?)\s+omega\b", re.I)
+_BONUS_PLEX = re.compile(r"\+\s*([\d,]+)\s*PLEX\b", re.I)
+_PLEX_PACK = re.compile(r"^\s*([\d,]+)\s*PLEX\s*$", re.I)
+_BOOST = re.compile(r"^\s*(3x\s+)?(undock|afterburn|warp|jump)\s+boost\s+bundle\s*$", re.I)
+
+
+def _store_offers(raw):
+    """Yield the offer objects embedded in the store page, each id once."""
+    try:
+        page = raw.decode("utf-8")
+    except UnicodeDecodeError as err:
+        raise UpstreamError("store page is not UTF-8") from err
+    chunks = []
+    for literal in _RSC_CHUNK.findall(page):
+        try:
+            chunks.append(json.loads(literal))
+        except ValueError:
+            continue
+    body = "".join(chunks)
+    decoder = json.JSONDecoder(parse_constant=_reject_constant)
+    seen = set()
+    at = body.find(_OFFER_START)
+    while at != -1:
+        try:
+            offer, end = decoder.raw_decode(body, at)
+        except ValueError:
+            end = at + len(_OFFER_START)
+        else:
+            oid = offer.get("id") if isinstance(offer, dict) else None
+            if isinstance(oid, str) and oid not in seen:
+                seen.add(oid)
+                yield offer
+        at = body.find(_OFFER_START, end)
+
+
+def _usd(pricing):
+    """Return (price, base) in USD from an offer's pricing object, or raise ValueError."""
+    if not isinstance(pricing, dict) or pricing.get("currency") != "USD":
+        raise ValueError("not a USD price")
+    price = _finite(pricing["price"])
+    base = _finite(pricing.get("basePrice", price))
+    if not 0 < price <= MAX_USD:
+        raise ValueError(f"implausible price {price!r}")
+    if not price <= base <= MAX_USD:
+        base = price
+    return price, base
+
+
+def _count(text):
+    num = int(text.replace(",", ""))
+    if not 0 < num <= 1_000_000:
+        raise ValueError(f"implausible count {text!r}")
+    return num
+
+
+def build_eve_store(raw):
+    """Return the store prices the PLEX page reads, in USD.
+
+    {"omega": [{months, plex, price, base}], "plex": [{qty, price, base}],
+     "boosts": [{key, price, base}]}. Offers are matched by title; anything
+    unrecognised is ignored. Without an Omega offer and the 20,000 PLEX pack
+    the round fails and the previous file stays published.
+    """
+    omega, plex, boosts = [], [], []
+    for offer in _store_offers(raw):
+        title = offer.get("title")
+        if not isinstance(title, str) or offer.get("isRecurring") is True or offer.get("canPurchase") is False:
+            continue
+        try:
+            price, base = _usd(offer.get("pricing"))
+            if m := _OMEGA_TITLE.match(title):
+                months = int(m.group(1))
+                if months not in OMEGA_MONTHS:
+                    continue
+                bonus = _BONUS_PLEX.search(title)
+                omega.append({"months": months, "plex": _count(bonus.group(1)) if bonus else 0, "price": price, "base": base})
+            elif m := _PLEX_PACK.match(title):
+                plex.append({"qty": _count(m.group(1)), "price": price, "base": base})
+            elif m := _BOOST.match(title):
+                key = ("3x-" if m.group(1) else "") + m.group(2).lower()
+                boosts.append({"key": key, "price": price, "base": base})
+        except (KeyError, TypeError, ValueError) as err:
+            log.warning("store offer %r skipped: %s", title[:60], err)
+    if not omega or not any(p["qty"] == 20000 for p in plex):
+        raise UpstreamError("store page has no Omega offer or 20,000 PLEX pack")
+    return _dumps({"omega": omega, "plex": plex, "boosts": boosts}, separators=(",", ":"))
+
+
 def write_atomic(path, body):
     """Replace path with body so readers never see a partial file."""
     path = Path(path)
@@ -240,6 +340,16 @@ def refresh_steam(data_dir=DATA_DIR, fetcher=fetch):
         return False
 
 
+def refresh_store(data_dir=DATA_DIR, fetcher=fetch):
+    try:
+        raw = fetcher(EVE_STORE_URL, timeout=20, accept="text/html")
+        write_atomic(Path(data_dir) / "evestore.json", build_eve_store(raw))
+        return True
+    except Exception as err:
+        log.warning("store refresh failed, keeping previous data: %s", err)
+        return False
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s refresher %(levelname)s %(message)s", stream=sys.stdout)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
@@ -249,6 +359,8 @@ def main():
         refresh_market()
         if cycle % STEAM_EVERY == 0:
             refresh_steam()
+        if cycle % STORE_EVERY == 0:
+            refresh_store()
         cycle += 1
         time.sleep(REFRESH_SECONDS)
 

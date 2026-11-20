@@ -20,6 +20,13 @@ export type Aggregates = Record<string, Quote | undefined>;
 /** Steam live Omega prices keyed by months: {final, initial, disc} in KRW. */
 export type SteamLive = Record<string, { final: number; initial: number; disc: number } | undefined>;
 
+/** EVE web store prices in USD, as the refresher reads them from store.eveonline.com. */
+export interface EveStore {
+  omega: Array<{ months: number; plex: number; price: number; base: number }>;
+  plex: Array<{ qty: number; price: number; base: number }>;
+  boosts: Array<{ key: string; price: number; base: number }>;
+}
+
 export const PRICE_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["buy.max", "매수 최고가 (즉시 매도가)"],
   ["buy.percentile", "매수 백분위"],
@@ -72,16 +79,23 @@ export const OMEGA_TIERS = [
 export const SPDAY_OPT = 64800;
 export const SPDAY_NOIMP = 51840;
 export const PLEX_BUNDLE = { steamKRW: 851500, webUSD: 649.99, qty: 20000 } as const;
+/** `key` matches the refresher's store boost keys ("undock", "3x-undock", ...). */
 export const SP_BUNDLES = [
-  { name: "언독 부스트 번들", usd: 16, sp: 648000 },
-  { name: "3x 언독 부스트 번들", usd: 32, sp: 1944000 },
-  { name: "애프터버너 부스트 번들", usd: 48, sp: 1944000 },
-  { name: "3x 애프터버너 번들", usd: 96, sp: 5832000 },
-  { name: "워프 부스트 번들", usd: 96, sp: 3888000 },
-  { name: "3x 워프 부스트 번들", usd: 192, sp: 11664000 },
-  { name: "점프 부스트 번들", usd: 192, sp: 7776000 },
-  { name: "3x 점프 부스트 번들", usd: 384, sp: 23328000 },
+  { key: "undock", name: "언독 부스트 번들", usd: 16, sp: 648000 },
+  { key: "3x-undock", name: "3x 언독 부스트 번들", usd: 32, sp: 1944000 },
+  { key: "afterburn", name: "애프터버너 부스트 번들", usd: 48, sp: 1944000 },
+  { key: "3x-afterburn", name: "3x 애프터버너 번들", usd: 96, sp: 5832000 },
+  { key: "warp", name: "워프 부스트 번들", usd: 96, sp: 3888000 },
+  { key: "3x-warp", name: "3x 워프 부스트 번들", usd: 192, sp: 11664000 },
+  { key: "jump", name: "점프 부스트 번들", usd: 192, sp: 7776000 },
+  { key: "3x-jump", name: "3x 점프 부스트 번들", usd: 384, sp: 23328000 },
 ] as const;
+
+/** Store prices can carry cents ($3.75); whole dollars print without them. */
+const usd = (v: number) => (Number.isInteger(v) ? comma(v) : v.toFixed(2));
+
+/** " · 25% 세일" when a store price is below its list price. */
+const saleNote = (price: number, base: number) => (base > price ? ` · ${Math.round((1 - price / base) * 100)}% 세일` : "");
 
 export const INJECTOR_TIERS = [
   { value: 500000, label: "5M 미만 · LSI당 500k" },
@@ -221,6 +235,8 @@ export interface RankOptions {
   /** Effective SP per LSI for the viewer's SP bracket. */
   injectorSp: number;
   steamLive: SteamLive | null;
+  /** Live EVE web store prices; null keeps the built-in 2026-06 prices. */
+  store?: EveStore | null;
 }
 
 export interface Rankings {
@@ -241,9 +257,11 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
   const px = r.plexPrice;
   const lsi = r.lsiPrice;
 
+  const store = o.store ?? null;
+  const webPack = store?.plex.find((p) => p.qty === PLEX_BUNDLE.qty);
   const chans = [
     { store: "Steam 20k 번들", per: PLEX_BUNDLE.steamKRW / PLEX_BUNDLE.qty },
-    { store: "EVE웹 20k 번들", per: (PLEX_BUNDLE.webUSD * usdKrw) / PLEX_BUNDLE.qty },
+    { store: "EVE웹 20k 번들", per: ((webPack ? webPack.price : PLEX_BUNDLE.webUSD) * usdKrw) / PLEX_BUNDLE.qty },
   ].filter((c) => c.per > 0);
   const kpp = chans.length ? Math.min(...chans.map((c) => c.per)) : 0;
 
@@ -259,12 +277,22 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
         : `₩${comma(sPrice)}`
       : `₩${comma(t.steam)} 정가`;
     om.push({ id: `steam-omega-${t.mo}`, label: `Steam 직접 ${t.mo}개월`, val: sPrice / t.mo, note: sNote });
-    om.push({
-      id: `web-omega-${t.mo}`,
-      label: `EVE웹 ${t.mo}개월`,
-      val: (t.usd * usdKrw - t.bonus * kpp) / t.mo,
-      note: `$${t.usd}${t.bonus ? ` +${comma(t.bonus)}P` : ""}`,
-    });
+    // With store prices: the cheapest offer for this length (bonus PLEX counted at won/PLEX); a length the store
+    // no longer sells drops out. Without them: the built-in 2026-06 price.
+    const offers = store
+      ? store.omega.filter((x) => x.months === t.mo)
+      : [{ months: t.mo, plex: t.bonus, price: t.usd, base: t.usd }];
+    const web = offers
+      .map((x) => ({ ...x, val: (x.price * usdKrw - x.plex * kpp) / t.mo }))
+      .sort((a, b) => a.val - b.val)[0];
+    if (web) {
+      om.push({
+        id: `web-omega-${t.mo}`,
+        label: `EVE웹 ${t.mo}개월`,
+        val: web.val,
+        note: `$${usd(web.price)}${web.plex ? ` +${comma(web.plex)}P` : ""}${saleNote(web.price, web.base)}`,
+      });
+    }
   }
   const pureVals = om.map((x) => x.val).filter((v) => Number.isFinite(v) && v > 0);
   const bestOmegaMonth = pureVals.length ? Math.min(...pureVals) : NaN;
@@ -319,11 +347,13 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
     { id: "train-noimp", label: "훈련 임플없음 (51,840/일)", val: bestOmegaDay / (SPDAY_NOIMP / 1e6), note: "+5임플 없음" },
   ];
   SP_BUNDLES.forEach((b, i) => {
+    const live = store ? store.boosts.find((x) => x.key === b.key) : { price: b.usd, base: b.usd };
+    if (!live) return; // not on sale in the store right now
     sp.push({
       id: `sp-bundle-${i}`,
       label: `EVE웹 ${b.name}`,
-      val: (b.usd * usdKrw) / (b.sp / 1e6),
-      note: `$${b.usd} / ${comma(b.sp)} SP · +대뇌가속기 보너스(미반영)`,
+      val: (live.price * usdKrw) / (b.sp / 1e6),
+      note: `$${usd(live.price)} / ${comma(b.sp)} SP${saleNote(live.price, live.base)} · +대뇌가속기 보너스(미반영)`,
     });
   });
 

@@ -136,6 +136,79 @@ class BuildSteamTests(unittest.TestCase):
             self.assertEqual(sorted(out), ["1", "12", "24", "3", "6"])
 
 
+def store_offer(oid, title, price, base=None, currency="USD", **extra):
+    return {"sysId": "s" + oid, "id": oid, "title": title, "pricing": {
+        "currency": currency, "currencySymbol": "$$", "price": price, "basePrice": base if base is not None else price},
+        "isRecurring": False, "canPurchase": True, **extra}
+
+
+def store_page(*offers, chunks=2):
+    """A store page shaped like the real one: offers inside Next.js RSC push chunks, split mid-object."""
+    payload = json.dumps({"children": list(offers)})
+    step = max(1, len(payload) // chunks + 1)
+    parts = [payload[i:i + step] for i in range(0, len(payload), step)]
+    scripts = "".join(f"<script>self.__next_f.push([1,{json.dumps(p)}])</script>" for p in parts)
+    return f"<html><body><div>$15.00</div>{scripts}</body></html>".encode()
+
+
+GOOD_STORE = store_page(
+    store_offer("o1", "1 Month Omega + Bonus Items", 15, 20),
+    store_offer("o24p", "24m omega + 1500 PLEX", 264, 329),
+    store_offer("p20", "20,000 PLEX", 650),
+    store_offer("p500", "500 PLEX", 25),
+    store_offer("b1", "Undock Boost Bundle", 16),
+    store_offer("b2", "3x Jump Boost Bundle", 384),
+    store_offer("x", "Amarr Campaign Pack", 30),
+)
+
+
+class BuildEveStoreTests(unittest.TestCase):
+    def test_reads_omega_plex_and_boost_offers_from_split_chunks(self):
+        out = json.loads(refresh.build_eve_store(GOOD_STORE))
+        self.assertEqual(out["omega"], [
+            {"months": 1, "plex": 0, "price": 15, "base": 20},
+            {"months": 24, "plex": 1500, "price": 264, "base": 329}])
+        self.assertEqual([p["qty"] for p in out["plex"]], [20000, 500])
+        self.assertEqual([b["key"] for b in out["boosts"]], ["undock", "3x-jump"])
+
+    def test_skips_odd_offers_without_failing_the_round(self):
+        page = store_page(
+            store_offer("o1", "1 Month Omega", 15),
+            store_offer("o2", "2m Omega", 30),  # not a tier the page knows
+            store_offer("o3", "3m Omega", 36, currency="EUR"),
+            store_offer("o6", "6m Omega", -1),
+            store_offer("o12", "12m Omega", float("1e9")),
+            store_offer("o24", "24m Omega", 198, extra_field="<script>"),
+            store_offer("sub", "1 Month Omega", 12, isRecurring=True),
+            store_offer("p20", "20,000 PLEX", 650, 600),  # base below price is ignored
+            store_offer("p20", "20,000 PLEX", 1),  # same id again
+        )
+        out = json.loads(refresh.build_eve_store(page))
+        self.assertEqual([(o["months"], o["price"]) for o in out["omega"]], [(1, 15), (24, 198)])
+        self.assertNotIn("extra_field", json.dumps(out))
+        self.assertEqual(out["plex"], [{"qty": 20000, "price": 650, "base": 650}])
+
+    def test_rejects_pages_without_omega_or_the_20k_pack(self):
+        for page in (b"<html>maintenance</html>", b"\xff\xfe", store_page(store_offer("p20", "20,000 PLEX", 650)),
+                     store_page(store_offer("o1", "1 Month Omega", 15), store_offer("p5", "500 PLEX", 25))):
+            with self.subTest(page=page[:40]), self.assertRaises(refresh.UpstreamError):
+                refresh.build_eve_store(page)
+
+    def test_refresh_store_writes_and_keeps_previous_on_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            calls = []
+
+            def fetcher(url, timeout=None, accept=None):
+                calls.append((url, accept))
+                return GOOD_STORE
+
+            self.assertTrue(refresh.refresh_store(d, fetcher))
+            self.assertEqual(calls, [(refresh.EVE_STORE_URL, "text/html")])
+            before = (Path(d) / "evestore.json").read_bytes()
+            self.assertFalse(refresh.refresh_store(d, lambda url, timeout=None, accept=None: b"<html></html>"))
+            self.assertEqual((Path(d) / "evestore.json").read_bytes(), before)
+
+
 class WriteTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()

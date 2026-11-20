@@ -1,10 +1,11 @@
 /*
- * Network access. PLEX quotes and Steam Omega prices come from same-origin files
- * the server refreshes every few minutes (/aggregates, /steamomega); their age is
- * the file's Last-Modified time. The 냉장고 계산기 calls ESI and Fuzzwork directly,
+ * Network access. PLEX quotes, Steam Omega prices and EVE web store prices come from
+ * same-origin files the server refreshes on a timer (/aggregates, /steamomega,
+ * /evestore); their age is the file's Last-Modified time. The 냉장고 계산기 calls
+ * ESI and Fuzzwork directly,
  * as the original page did (both allow cross-origin requests).
  */
-import { isUsableAggregates, type Aggregates, type SteamLive } from "./plex";
+import { isUsableAggregates, type Aggregates, type EveStore, type SteamLive } from "./plex";
 import { idOf, type PriceCache } from "./fridge";
 
 export interface Snapshot<T> {
@@ -41,6 +42,26 @@ export function isSteamLive(d: unknown): d is SteamLive {
 
 export function fetchSteamOmega(signal?: AbortSignal): Promise<Snapshot<SteamLive>> {
   return getSnapshot("/steamomega", isSteamLive, signal);
+}
+
+const positive = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
+const listOf = (v: unknown, ok: (x: Record<string, unknown>) => boolean) =>
+  Array.isArray(v) && v.every((x) => !!x && typeof x === "object" && ok(x as Record<string, unknown>));
+
+export function isEveStore(d: unknown): d is EveStore {
+  if (!d || typeof d !== "object" || Array.isArray(d)) return false;
+  const s = d as Record<string, unknown>;
+  const priced = (x: Record<string, unknown>) => positive(x.price) && positive(x.base);
+  return (
+    listOf(s.omega, (x) => priced(x) && positive(x.months) && typeof x.plex === "number" && Number.isFinite(x.plex) && x.plex >= 0) &&
+    listOf(s.plex, (x) => priced(x) && positive(x.qty)) &&
+    listOf(s.boosts, (x) => priced(x) && typeof x.key === "string") &&
+    (s.omega as unknown[]).length > 0
+  );
+}
+
+export function fetchEveStore(signal?: AbortSignal): Promise<Snapshot<EveStore>> {
+  return getSnapshot("/evestore", isEveStore, signal);
 }
 
 // ---- 냉장고 계산기 ----

@@ -3,7 +3,7 @@ import { ToolFrame } from "../components/ToolFrame";
 import { Icon } from "../components/Icon";
 import { TOOL_BY_ID } from "../tools";
 import { readJSON, writeJSON } from "../lib/storage";
-import { fetchAggregates, fetchSteamOmega } from "../lib/market";
+import { fetchAggregates, fetchEveStore, fetchSteamOmega, type Snapshot } from "../lib/market";
 import { ago, comma, fmtKRW, isStale, shortIsk, stamp } from "../lib/format";
 import {
   DEFAULT_DIRECTION,
@@ -19,6 +19,7 @@ import {
   type Prices,
   type Quote,
   type QuoteType,
+  type EveStore,
   type RankRow,
   type SteamLive,
 } from "../lib/plex";
@@ -206,6 +207,7 @@ export default function Plex() {
   const [injectorSp, setInjectorSp] = useState(initial.injectorSp);
   const [fetchedAt, setFetchedAt] = useState<Date | null>(initial.fetchedAt);
   const [steamLive, setSteamLive] = useState<SteamLive | null>(null);
+  const [eveStore, setEveStore] = useState<Snapshot<EveStore> | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   // Re-render each minute so a page left open notices its quotes getting old.
   const [now, setNow] = useState(() => new Date());
@@ -244,6 +246,9 @@ export default function Plex() {
     fetchSteamOmega(ac.signal).then((s) => setSteamLive(s.data), () => {
       /* Steam unavailable: list prices stay */
     });
+    fetchEveStore(ac.signal).then(setEveStore, () => {
+      /* store prices unavailable: the built-in 2026-06 prices stay */
+    });
     return () => ac.abort();
   }, [refresh]);
 
@@ -267,8 +272,8 @@ export default function Plex() {
   const setF = <K extends keyof FarmInputs>(k: K, v: FarmInputs[K]) => setFarm((f) => ({ ...f, [k]: v }));
 
   const ranks = useMemo(
-    () => buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive }),
-    [prices, farm, usdKrw, injectorSp, steamLive],
+    () => buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive, store: eveStore?.data ?? null }),
+    [prices, farm, usdKrw, injectorSp, steamLive, eveStore],
   );
 
   const stale = status !== "loading" && !!fetchedAt && isStale(fetchedAt, now);
@@ -422,7 +427,11 @@ export default function Plex() {
           시세: Fuzzwork Market · Jita 4-4 (station 60003760). 서버가 몇 분마다 받아 둔 값이며 위의 기준 시각이 받은 시각입니다.
         </p>
         <p>
-          원/PLEX는 Steam·EVE웹 20k 번들 정가 중 싼 쪽(지금 {comma(Math.round(ranks.wonPerPlex))}원)으로 계산합니다. EVE웹 가격과 SP 번들은 2026-06 확인 가격입니다. 결제·투자 판단은 본인 책임입니다.
+          원/PLEX는 Steam·EVE웹 20k 번들 중 싼 쪽(지금 {comma(Math.round(ranks.wonPerPlex))}원)으로 계산합니다.{" "}
+          {eveStore
+            ? `EVE웹 가격(오메가·PLEX·SP 번들)은 EVE 스토어에서 ${eveStore.fetchedAt ? stamp(eveStore.fetchedAt, now) + "에 " : ""}받은 값(세일 포함)입니다.`
+            : "EVE웹 가격을 못 받아 2026-06 확인 가격으로 계산했습니다."}{" "}
+          결제·투자 판단은 본인 책임입니다.
         </p>
       </section>
     </ToolFrame>

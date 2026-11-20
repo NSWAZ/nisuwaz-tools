@@ -66,6 +66,14 @@
 		file_server
 	}
 
+	handle /evestore {
+		root * /srv/data
+		rewrite * /evestore.json
+		header Content-Type "application/json; charset=utf-8"
+		header Cache-Control "public, max-age=300"
+		file_server
+	}
+
 	@app path / /index.html /plex /plex/ /fridge /fridge/
 	handle @app {
 		rewrite * /index.html
@@ -92,7 +100,7 @@
 		import security_headers
 		# Never let an error inherit the long-lived asset cache header.
 		header Cache-Control no-store
-		@page not path /aggregates /steamomega /assets/*
+		@page not path /aggregates /steamomega /evestore /assets/*
 		handle @page {
 			rewrite * /index.html
 			header Cache-Control no-cache

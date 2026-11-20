@@ -18,15 +18,18 @@ Caddyfile     serves the built site and the JSON files; nothing else
 docker/       entrypoint.sh: runs the refresher and Caddy side by side
 ```
 
-Visitor requests never reach an upstream service. The refresher fetches Fuzzwork aggregates every 5 minutes and Steam Omega prices every 30 minutes, validates them and writes `/srv/data/aggregates.json` and `/srv/data/steamomega.json` atomically. A failed fetch keeps the previous file. Caddy serves them at `GET /aggregates` and `GET /steamomega`; the file's `Last-Modified` tells the page how old the quotes are, and the page warns when they are over 30 minutes old.
+Visitor requests never reach an upstream service. The refresher fetches Fuzzwork aggregates every 5 minutes, Steam Omega prices every 30 minutes and the EVE web store page every 6 hours, validates them and writes `/srv/data/aggregates.json`, `/srv/data/steamomega.json` and `/srv/data/evestore.json` atomically. A failed fetch keeps the previous file. Caddy serves them at `GET /aggregates`, `GET /steamomega` and `GET /evestore`; the file's `Last-Modified` tells the page how old the quotes are, and the page warns when they are over 30 minutes old.
 
-Routes: `/`, `/plex`, `/fridge` (the app), `/aggregates`, `/steamomega` (data), `/healthz`, `/assets/*` (hashed, cached for a year). Only `GET` and `HEAD` are accepted; anything else is `405`.
+The EVE web store has no public price API. The refresher reads the offer data the store page embeds (Omega lengths, PLEX packs, SP boost bundles, matched by title). If the page changes shape, the round fails, the previous file stays, and without any file the PLEX page uses its built-in 2026-06 prices.
+
+Routes: `/`, `/plex`, `/fridge` (the app), `/aggregates`, `/steamomega`, `/evestore` (data), `/healthz`, `/assets/*` (hashed, cached for a year). Only `GET` and `HEAD` are accepted; anything else is `405`.
 
 ## Data sources
 
 - Fuzzwork market aggregates for Jita 4-4 prices.
 - EVE ESI for item name → ID lookup and packaged volume (냉장고 계산기).
 - Steam public app details API for KRW Omega prices.
+- EVE web store page (store.eveonline.com) for USD Omega, PLEX pack and SP bundle prices.
 - Built-in public retail-price constants (2026-06) when live data is unavailable.
 
 ## Develop
@@ -61,7 +64,7 @@ docker run --rm --read-only --tmpfs /tmp --tmpfs /srv/data:uid=100,gid=101 \
   -p 127.0.0.1:8080:8080 goemktg/nisuwaz-tools
 ```
 
-The image builds and tests the site, then runs as an unprivileged user. Settings (environment variables): `PORT` (default `8080`), `REFRESH_SECONDS` (default `300`), `STEAM_EVERY` (refresh Steam every N market rounds, default `6`).
+The image builds and tests the site, then runs as an unprivileged user. Settings (environment variables): `PORT` (default `8080`), `REFRESH_SECONDS` (default `300`), `STEAM_EVERY` (refresh Steam every N market rounds, default `6`), `STORE_EVERY` (refresh the EVE store every N market rounds, default `72`).
 
 Pushing a `v*` tag builds and publishes the image through `.github/workflows/docker.yml`. Actions are pinned to commit hashes; Dependabot (`.github/dependabot.yml`) proposes updates for them and the base images.
 
