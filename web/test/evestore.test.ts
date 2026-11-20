@@ -43,6 +43,13 @@ describe("rankings with EVE web store prices", () => {
     expect(bundles.find((b) => b.label.includes("언독"))?.note).toMatch(/^\$12\.50 \/ 648,000 SP · 22% 세일/);
   });
 
+  it("skips an offer whose bonus PLEX outweighs its price instead of dropping the whole length", () => {
+    const odd: EveStore = { ...STORE, omega: [...STORE.omega, { months: 24, plex: 1_000_000, price: 1, base: 1 }] };
+    const row = rank(odd).omega.find((x) => x.id === "web-omega-24");
+    expect(row?.val).toBeGreaterThan(0);
+    expect(row?.val).toBeCloseTo(rank(STORE).omega.find((x) => x.id === "web-omega-24")!.val);
+  });
+
   it("falls back to all built-in rows without store prices", () => {
     const r = rank(null);
     expect(r.omega.filter((x) => x.id.startsWith("web-omega-")).length).toBe(5);

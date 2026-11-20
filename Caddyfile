@@ -95,12 +95,16 @@
 		}
 	}
 
+	# Every error (not only 404) gets the security headers and is never cached long.
 	# Unknown pages get the app's own "not on the map" screen with a real 404.
-	handle_errors 404 {
+	handle_errors {
 		import security_headers
 		# Never let an error inherit the long-lived asset cache header.
 		header Cache-Control no-store
-		@page not path /aggregates /steamomega /evestore /assets/*
+		@page {
+			expression {err.status_code} == 404
+			not path /aggregates /steamomega /evestore /assets/*
+		}
 		handle @page {
 			rewrite * /index.html
 			header Cache-Control no-cache
@@ -108,6 +112,6 @@
 				status 404
 			}
 		}
-		respond "Not Found" 404
+		respond "{err.status_text}" {err.status_code}
 	}
 }

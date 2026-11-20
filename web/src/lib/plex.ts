@@ -282,8 +282,10 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
     const offers = store
       ? store.omega.filter((x) => x.months === t.mo)
       : [{ months: t.mo, plex: t.bonus, price: t.usd, base: t.usd }];
+    // Only a positive cost can be ranked; an offer whose bonus outweighs its price is skipped, not picked.
     const web = offers
       .map((x) => ({ ...x, val: (x.price * usdKrw - x.plex * kpp) / t.mo }))
+      .filter((x) => Number.isFinite(x.val) && x.val > 0)
       .sort((a, b) => a.val - b.val)[0];
     if (web) {
       om.push({

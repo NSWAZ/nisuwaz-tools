@@ -151,6 +151,14 @@ def store_page(*offers, chunks=2):
     return f"<html><body><div>$15.00</div>{scripts}</body></html>".encode()
 
 
+def raw_store_page(*parts, chunks=3):
+    """Like store_page, but each part is either an offer dict or raw text placed verbatim in the payload."""
+    payload = ",".join(p if isinstance(p, str) else json.dumps(p) for p in parts)
+    step = max(1, len(payload) // chunks + 1)
+    pieces = [payload[i:i + step] for i in range(0, len(payload), step)]
+    return "".join(f"<script>self.__next_f.push([1,{json.dumps(p)}])</script>" for p in pieces).encode()
+
+
 GOOD_STORE = store_page(
     store_offer("o1", "1 Month Omega + Bonus Items", 15, 20),
     store_offer("o24p", "24m omega + 1500 PLEX", 264, 329),
@@ -187,6 +195,38 @@ class BuildEveStoreTests(unittest.TestCase):
         self.assertEqual([(o["months"], o["price"]) for o in out["omega"]], [(1, 15), (24, 198)])
         self.assertNotIn("extra_field", json.dumps(out))
         self.assertEqual(out["plex"], [{"qty": 20000, "price": 650, "base": 650}])
+
+    def _timed(self, page):
+        start = time.monotonic()
+        out = json.loads(refresh.build_eve_store(page))
+        return out, time.monotonic() - start
+
+    def test_nested_offers_that_fail_inside_are_scanned_once(self):
+        # Each level would otherwise re-read everything up to the innermost error. 500 levels stays
+        # under any interpreter's recursion limit, so this exercises the JSONDecodeError path.
+        good = [store_offer("o1", "1 Month Omega", 15), store_offer("p20", "20,000 PLEX", 650)]
+        page = raw_store_page(('{"sysId":[' + "1," * 300) * 500 + "x", *good)  # about 3.6 s before the fix
+        out, took = self._timed(page)
+        self.assertEqual([o["months"] for o in out["omega"]], [1])
+        self.assertLess(took, 0.5)
+
+    def test_skips_an_over_deep_offer_but_keeps_the_rest(self):
+        deep = '{"sysId":"sd","id":"deep","title":"3m Omega","pricing":' + "[" * 20000 + "]" * 20000 + "}"
+        page = raw_store_page(deep, store_offer("o1", "1 Month Omega", 15), store_offer("p20", "20,000 PLEX", 650))
+        out = json.loads(refresh.build_eve_store(page))
+        self.assertEqual([o["months"] for o in out["omega"]], [1])
+
+    def test_many_too_deep_offer_starts_stay_cheap(self):
+        # An unclosed run of starts swallows the rest of the body (it is all inside that object).
+        page = raw_store_page(store_offer("o1", "1 Month Omega", 15), store_offer("p20", "20,000 PLEX", 650), '{"sysId":[' * 8000)
+        out, took = self._timed(page)
+        self.assertEqual([o["months"] for o in out["omega"]], [1])
+        self.assertLess(took, 0.5)
+
+    def test_skip_value_respects_strings_and_escapes(self):
+        text = '{"a":"}]\\"[{\\n","b":[1,{"c":"\\\\"}]} tail'
+        self.assertEqual(text[refresh._skip_value(text, 0):], " tail")
+        self.assertEqual(refresh._skip_value('[[[', 0), 3)
 
     def test_rejects_pages_without_omega_or_the_20k_pack(self):
         for page in (b"<html>maintenance</html>", b"\xff\xfe", store_page(store_offer("p20", "20,000 PLEX", 650)),

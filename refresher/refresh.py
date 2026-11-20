@@ -216,6 +216,34 @@ _PLEX_PACK = re.compile(r"^\s*([\d,]+)\s*PLEX\s*$", re.I)
 _BOOST = re.compile(r"^\s*(3x\s+)?(undock|afterburn|warp|jump)\s+boost\s+bundle\s*$", re.I)
 
 
+_JSON_TOKENS = re.compile(r'["\\{}\[\]]')
+
+
+def _skip_value(text, at):
+    """Return the index just past the JSON object or array starting at `at` (end of text if unclosed)."""
+    depth, in_string, escaped = 0, False, False
+    for m in _JSON_TOKENS.finditer(text, at):
+        ch = m.group()
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                # Only an escaped quote or backslash is itself a token the loop would see next.
+                escaped = text[m.end():m.end() + 1] in ('"', "\\")
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch in "{[":
+            depth += 1
+        elif ch in "}]":
+            depth -= 1
+            if depth == 0:
+                return m.end()
+    return len(text)
+
+
 def _store_offers(raw):
     """Yield the offer objects embedded in the store page, each id once."""
     try:
@@ -235,7 +263,15 @@ def _store_offers(raw):
     while at != -1:
         try:
             offer, end = decoder.raw_decode(body, at)
-        except ValueError:
+        except json.JSONDecodeError as err:
+            # Resume after the error, not just past this start: an offer that fails deep inside
+            # would otherwise be re-read once per nested start, quadratic in the page size.
+            end = max(at + len(_OFFER_START), err.pos)
+        except RecursionError:
+            # Too deep to decode: skip the whole offer in one pass, or every nested start in it
+            # would hit the recursion limit again.
+            end = _skip_value(body, at)
+        except ValueError:  # a rejected constant such as NaN
             end = at + len(_OFFER_START)
         else:
             oid = offer.get("id") if isinstance(offer, dict) else None
