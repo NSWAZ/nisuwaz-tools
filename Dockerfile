@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- build the React site (tests run here too) ----
-FROM node:22.22-alpine AS web
+FROM node:26.13-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json web/.npmrc ./
 RUN npm ci --no-audit
