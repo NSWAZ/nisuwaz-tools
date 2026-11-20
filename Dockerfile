@@ -9,7 +9,7 @@ COPY web/ ./
 RUN npm test && npm run build
 
 # ---- runtime: Caddy serves files, the refresher writes market snapshots ----
-FROM caddy:2.10.2-alpine
+FROM caddy:2.11.9-alpine
 # Port 8080 needs no bind capability; dropping caddy's file capability lets the
 # container run with --cap-drop ALL and no-new-privileges.
 RUN apk add --no-cache python3 libcap \
