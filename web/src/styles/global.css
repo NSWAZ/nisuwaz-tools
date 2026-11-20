@@ -739,13 +739,6 @@ html[data-vt="back"]::view-transition-new(root) {
   color: var(--ink-2);
   text-wrap: balance;
 }
-.chart-note {
-  position: absolute;
-  right: 48px;
-  top: 16px;
-  font-size: 0.8125rem;
-  color: var(--ink-3);
-}
 .tool-list ul {
   list-style: none;
   margin: 0;
@@ -835,7 +828,6 @@ html[data-vt="back"]::view-transition-new(root) {
     margin-top: 6px;
     font-size: 0.9375rem;
   }
-  .chart-note,
   .grid-labels {
     display: none;
   }

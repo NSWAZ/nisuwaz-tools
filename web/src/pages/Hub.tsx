@@ -178,9 +178,6 @@ export default function Hub() {
                 </li>
               ))}
             </ul>
-            <p className="chart-note" aria-hidden="true">
-              점선 원 · 앞으로 도구가 들어올 자리
-            </p>
           </div>
         </div>
 
