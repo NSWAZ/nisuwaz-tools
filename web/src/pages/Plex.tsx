@@ -288,7 +288,10 @@ export default function Plex() {
 
   return (
     <ToolFrame tool={tool}>
-      <section className="panel quote-strip" aria-label="적용 시세">
+      <section className="panel quote-strip" aria-labelledby="quotes-h">
+        <h2 id="quotes-h" className="visually-hidden">
+          적용 시세
+        </h2>
         <div className="qs-row">
           <span className="qs-place">지타 4-4</span>
           {QTYPES.map((t) => (

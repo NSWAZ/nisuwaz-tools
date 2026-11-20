@@ -116,7 +116,7 @@ function FitCard({
         </span>
         <span className="qty">
           <span className="stepper" role="group" aria-label={`${title} 척수`}>
-            <button type="button" aria-label="한 척 빼기" onClick={() => onChange({ qty: Math.max(0, fit.qty - 1) })}>
+            <button type="button" aria-label={`${title} 한 척 빼기`} onClick={() => onChange({ qty: Math.max(0, fit.qty - 1) })}>
               <Icon name="minus" size={16} />
             </button>
             <input
@@ -127,7 +127,7 @@ function FitCard({
               aria-label={`${title} 척수`}
               onChange={(e) => onChange({ qty: Math.max(0, parseInt(e.target.value, 10) || 0) })}
             />
-            <button type="button" aria-label="한 척 더하기" onClick={() => onChange({ qty: fit.qty + 1 })}>
+            <button type="button" aria-label={`${title} 한 척 더하기`} onClick={() => onChange({ qty: fit.qty + 1 })}>
               <Icon name="plus" size={16} />
             </button>
           </span>
