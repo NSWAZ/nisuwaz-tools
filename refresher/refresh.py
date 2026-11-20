@@ -257,7 +257,9 @@ def _store_offers(raw):
         except ValueError:
             continue
     body = "".join(chunks)
-    decoder = json.JSONDecoder(parse_constant=_reject_constant)
+    # NaN/Infinity decode as floats here; _usd -> _finite rejects them per offer. Rejecting them in the
+    # decoder would raise without a position and force a quadratic rescan of nested offers.
+    decoder = json.JSONDecoder()
     seen = set()
     at = body.find(_OFFER_START)
     while at != -1:
@@ -267,12 +269,10 @@ def _store_offers(raw):
             # Resume after the error, not just past this start: an offer that fails deep inside
             # would otherwise be re-read once per nested start, quadratic in the page size.
             end = max(at + len(_OFFER_START), err.pos)
-        except RecursionError:
-            # Too deep to decode: skip the whole offer in one pass, or every nested start in it
-            # would hit the recursion limit again.
+        except (RecursionError, ValueError):
+            # Too deep to decode, or a number int() refuses (over 4,300 digits): no error position,
+            # so skip the whole offer in one pass; otherwise every nested start would fail again.
             end = _skip_value(body, at)
-        except ValueError:  # a rejected constant such as NaN
-            end = at + len(_OFFER_START)
         else:
             oid = offer.get("id") if isinstance(offer, dict) else None
             if isinstance(oid, str) and oid not in seen:

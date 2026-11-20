@@ -210,6 +210,29 @@ class BuildEveStoreTests(unittest.TestCase):
         self.assertEqual([o["months"] for o in out["omega"]], [1])
         self.assertLess(took, 0.5)
 
+    def test_nested_offers_ending_in_a_non_finite_constant_are_scanned_once(self):
+        good = [store_offer("o1", "1 Month Omega", 15), store_offer("p20", "20,000 PLEX", 650)]
+        for constant in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(constant=constant):
+                page = raw_store_page(*good, ('{"sysId":[' + "1," * 300) * 400 + constant)  # ~3.5 s before
+                out, took = self._timed(page)
+                self.assertEqual([o["months"] for o in out["omega"]], [1])
+                self.assertLess(took, 0.5)
+
+    def test_nested_offers_ending_in_an_oversized_integer_are_scanned_once(self):
+        good = [store_offer("o1", "1 Month Omega", 15), store_offer("p20", "20,000 PLEX", 650)]
+        page = raw_store_page(*good, ('{"sysId":[' + "1," * 300) * 400 + "9" * 5000)
+        out, took = self._timed(page)
+        self.assertEqual([o["months"] for o in out["omega"]], [1])
+        self.assertLess(took, 0.5)
+
+    def test_skips_an_offer_priced_with_a_non_finite_constant(self):
+        page = store_page(store_offer("o3", "3m Omega", float("nan")), store_offer("o6", "6m Omega", float("inf")),
+                          store_offer("o1", "1 Month Omega", 15), store_offer("p20", "20,000 PLEX", 650))
+        self.assertIn(b"NaN", page)
+        out = json.loads(refresh.build_eve_store(page))
+        self.assertEqual([o["months"] for o in out["omega"]], [1])
+
     def test_skips_an_over_deep_offer_but_keeps_the_rest(self):
         deep = '{"sysId":"sd","id":"deep","title":"3m Omega","pricing":' + "[" * 20000 + "]" * 20000 + "}"
         page = raw_store_page(deep, store_offer("o1", "1 Month Omega", 15), store_offer("p20", "20,000 PLEX", 650))
