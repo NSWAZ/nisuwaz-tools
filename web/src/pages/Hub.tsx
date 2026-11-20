@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { GATES, PLANNED, TOOLS, TOOL_BY_ID, type ToolDef } from "../tools";
 import { Icon } from "../components/Icon";
-import { SiteFooter, makeStars } from "../components/ToolFrame";
+import { SiteFooter, Starfield, makeStars } from "../components/ToolFrame";
 import { centerOf, linkProps, navigate, useDocumentTitle, useMediaQuery } from "../lib/router";
 
 // Chart coordinates: a 16:9 sheet, 1600 × 900 units; tools sit at percentages of it.
@@ -110,6 +110,7 @@ export default function Hub() {
 
   return (
     <div className="hub">
+      <Starfield />
       <main className="atlas">
         <div className="chart-wrap">
           <header className="atlas-head">

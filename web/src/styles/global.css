@@ -310,6 +310,59 @@ input[type="checkbox"] {
   pointer-events: none;
   opacity: 0.6;
 }
+.starfield .sky {
+  fill: #dfe8ff;
+}
+.twinkle {
+  animation: twinkle 4s ease-in-out infinite;
+}
+.tw-1 {
+  animation-duration: 5.3s;
+  animation-delay: -1.7s;
+}
+.tw-2 {
+  animation-duration: 3.4s;
+  animation-delay: -2.6s;
+}
+.tw-3 {
+  animation-duration: 6.1s;
+  animation-delay: -0.9s;
+}
+.tw-4 {
+  animation-duration: 4.7s;
+  animation-delay: -3.8s;
+}
+@keyframes twinkle {
+  50% {
+    opacity: 0.2;
+  }
+}
+.meteor {
+  opacity: 0;
+  animation: meteor 19s linear 4s infinite;
+}
+.meteor-b {
+  animation-duration: 27s;
+  animation-delay: 13s;
+}
+/* A quick streak in the first few percent of the cycle, then a long dark pause. */
+@keyframes meteor {
+  0% {
+    opacity: 0;
+    transform: translateX(-60px);
+  }
+  1% {
+    opacity: 1;
+  }
+  5% {
+    opacity: 0;
+    transform: translateX(780px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(780px);
+  }
+}
 .site-foot {
   padding: 28px var(--gutter-r) 36px var(--gutter);
   border-top: 1px solid var(--rule);
@@ -478,6 +531,7 @@ html[data-vt="back"]::view-transition-new(root) {
   min-height: 100svh;
   display: grid;
   grid-template-rows: 1fr auto;
+  isolation: isolate;
 }
 .atlas {
   padding: clamp(16px, 2.4vw, 28px) var(--gutter-r) 28px var(--gutter);
@@ -1464,6 +1518,10 @@ pre.multibuy {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .twinkle,
+  .meteor {
+    animation: none !important;
+  }
   *,
   *::before,
   *::after {

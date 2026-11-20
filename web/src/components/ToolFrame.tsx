@@ -19,14 +19,42 @@ export function makeStars(count: number, seed: number, w: number, h: number) {
   });
 }
 
-/** A faint fixed sky behind tool pages. */
+/** Twinkle groups: each animates its own opacity on a different beat, so scattered stars shimmer out of step. */
+const TWINKLE_GROUPS = 5;
+
+/**
+ * A faint fixed sky behind every page. Some stars twinkle and a meteor crosses
+ * now and then; both are CSS animations on a few groups (not per star) and stop
+ * entirely under reduced motion.
+ */
 export function Starfield() {
   const stars = useMemo(() => makeStars(150, 7, 1600, 1000), []);
+  const still = stars.filter((_, i) => i % 3 !== 0);
+  const twinkling = stars.filter((_, i) => i % 3 === 0);
+  const dot = (st: (typeof stars)[number], i: number) => (
+    <circle key={i} cx={st.x.toFixed(1)} cy={st.y.toFixed(1)} r={st.r.toFixed(2)} opacity={st.o.toFixed(2)} />
+  );
   return (
     <svg className="starfield" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">
-      {stars.map((st, i) => (
-        <circle key={i} cx={st.x.toFixed(1)} cy={st.y.toFixed(1)} r={st.r.toFixed(2)} fill="#dfe8ff" opacity={st.o.toFixed(2)} />
+      <defs>
+        <linearGradient id="meteor-tail" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="170" y2="0">
+          <stop offset="0" stopColor="#dfe8ff" stopOpacity="0" />
+          <stop offset="1" stopColor="#f4f8ff" stopOpacity="1" />
+        </linearGradient>
+      </defs>
+      <g className="sky">{still.map(dot)}</g>
+      {Array.from({ length: TWINKLE_GROUPS }, (_, g) => (
+        <g key={g} className={`sky twinkle tw-${g}`}>
+          {twinkling.filter((_, i) => i % TWINKLE_GROUPS === g).map(dot)}
+        </g>
       ))}
+      {/* The tail fades toward the origin; each line flies along its own +x once per cycle. */}
+      <g transform="translate(1520 30) rotate(168)">
+        <line className="meteor meteor-a" x1="0" y1="0" x2="170" y2="0" stroke="url(#meteor-tail)" strokeWidth="2.2" strokeLinecap="round" />
+      </g>
+      <g transform="translate(820 18) rotate(164) scale(0.7)">
+        <line className="meteor meteor-b" x1="0" y1="0" x2="170" y2="0" stroke="url(#meteor-tail)" strokeWidth="2.2" strokeLinecap="round" />
+      </g>
     </svg>
   );
 }
