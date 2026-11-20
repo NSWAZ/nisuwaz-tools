@@ -1,0 +1,45 @@
+name: CI
+
+# Tests every pull request (including Dependabot's) and every push to main.
+# Builds the image but never pushes it; no secrets are used.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Refresher tests
+        run: python3 -m unittest discover -s tests
+
+      - name: Build image (runs the web tests and build)
+        run: docker build -t nisuwaz-tools:ci .
+
+      - name: Smoke test the image
+        run: |
+          docker run -d --name ci --network none --read-only \
+            --tmpfs /tmp --tmpfs /srv/data:uid=100,gid=101 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            nisuwaz-tools:ci
+          docker exec ci caddy validate --config /etc/caddy/Caddyfile
+          docker exec -i ci python3 - < docker/smoke.py
+
+      - name: Container logs
+        if: always()
+        run: docker logs ci 2>&1 | tail -n 50 || true
