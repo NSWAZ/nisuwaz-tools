@@ -63,7 +63,7 @@ docker run --rm --read-only --tmpfs /tmp --tmpfs /srv/data:uid=100,gid=101 \
 
 The image builds and tests the site, then runs as an unprivileged user. Settings (environment variables): `PORT` (default `8080`), `REFRESH_SECONDS` (default `300`), `STEAM_EVERY` (refresh Steam every N market rounds, default `6`).
 
-Pushing a `v*` tag builds and publishes the image through `.github/workflows/docker.yml`.
+Pushing a `v*` tag builds and publishes the image through `.github/workflows/docker.yml`. Actions are pinned to commit hashes; Dependabot (`.github/dependabot.yml`) proposes updates for them and the base images.
 
 ## Deployment
 

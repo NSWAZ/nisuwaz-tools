@@ -1,0 +1,16 @@
+# Keeps this repository's own inputs current: the base images in Dockerfile
+# and the pinned GitHub Actions in .github/workflows. Deployment tags are
+# bumped separately (Renovate on the infrastructure side).
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
