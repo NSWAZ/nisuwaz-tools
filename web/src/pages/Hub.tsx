@@ -52,9 +52,30 @@ function ChartArt({ lit }: { lit: ToolDef["id"] | null }) {
         ))}
       </g>
       <g className="stars">
-        {stars.map((s, i) => (
-          <circle key={i} cx={s.x.toFixed(1)} cy={s.y.toFixed(1)} r={s.r.toFixed(2)} opacity={s.o.toFixed(2)} />
-        ))}
+        {stars
+          .filter((_, i) => i % 3 !== 0)
+          .map((s, i) => (
+            <circle key={i} cx={s.x.toFixed(1)} cy={s.y.toFixed(1)} r={s.r.toFixed(2)} opacity={s.o.toFixed(2)} />
+          ))}
+      </g>
+      {/* Same twinkle beats as the page sky: every third star, drawn brighter, in five out-of-step groups. */}
+      {Array.from({ length: 5 }, (_, g) => (
+        <g key={"tw" + g} className={`stars twinkle tw-${g}`}>
+          {stars
+            .filter((_, i) => i % 3 === 0 && (i / 3) % 5 === g)
+            .map((s, i) => (
+              <circle key={i} cx={s.x.toFixed(1)} cy={s.y.toFixed(1)} r={(Math.max(s.r, 0.9) * 1.35).toFixed(2)} />
+            ))}
+        </g>
+      ))}
+      <defs>
+        <linearGradient id="chart-meteor-tail" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="170" y2="0">
+          <stop offset="0" stopColor="#dfe8ff" stopOpacity="0" />
+          <stop offset="1" stopColor="#f4f8ff" stopOpacity="1" />
+        </linearGradient>
+      </defs>
+      <g transform="translate(1450 60) rotate(160)">
+        <line className="meteor meteor-c" x1="0" y1="0" x2="170" y2="0" stroke="url(#chart-meteor-tail)" strokeWidth="2.2" strokeLinecap="round" />
       </g>
       <path className="region" d={REGION} />
       <g className="gates">

@@ -351,6 +351,10 @@ input[type="checkbox"] {
   animation-duration: 27s;
   animation-delay: 13s;
 }
+.meteor-c {
+  animation-duration: 15s;
+  animation-delay: 2.5s;
+}
 /* A quick streak in the first few percent of the cycle, then a long dark pause. */
 @keyframes meteor {
   0% {
