@@ -44,7 +44,7 @@ def wait_ready(seconds=30):
         try:
             if request("GET", "/healthz")[0] == 200:
                 return
-        except OSError:
+        except (OSError, http.client.HTTPException):
             pass
         if time.monotonic() > deadline:
             sys.exit("server did not become ready")
