@@ -73,3 +73,11 @@ Pushing a `v*` tag builds and publishes the image through `.github/workflows/doc
 ## Deployment
 
 Put the container behind a reverse proxy (tools.nisuwaz.com runs Cloudflare → Caddy → this container) and publish port 8080 only on the loopback or internal network. The container itself only serves static files with short header/body timeouts, but per-client connection limits belong at the proxy.
+
+Releasing a version:
+
+1. Merge the change into `main` through a pull request (CI must pass).
+2. Push a `vX.Y.Z` tag on that `main` commit. `.github/workflows/docker.yml` publishes `goemktg/nisuwaz-tools:X.Y.Z` (and `X.Y`, `X`, `latest`) to Docker Hub.
+3. In the infrastructure repository, change the image tag in the tools stack's compose file to `X.Y.Z` in a one-line merge request (branch `deploy/nisuwaz-tools-X.Y.Z`). Merging it into `main` redeploys the stack. Renovate does not track this image there, so nothing opens this request automatically.
+
+Bump the major version when a release removes routes or changes how the container must be run.
