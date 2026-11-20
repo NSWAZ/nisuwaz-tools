@@ -20,10 +20,32 @@ const rank = (store: EveStore | null) =>
 
 describe("rankings with EVE web store prices", () => {
   it("prices the web PLEX channel from the store's 20k pack", () => {
-    const web = rank(STORE).isk.find((r) => r.id === "web-plex-sell");
-    const fixed = rank(null).isk.find((r) => r.id === "web-plex-sell");
+    const web = rank(STORE).isk.find((r) => r.id === "web-plex-sell-20000");
+    const fixed = rank(null).isk.find((r) => r.id === "web-plex-sell-20000");
     expect(web?.note).toContain("45원/PLEX"); // 600 × 1500 / 20000
-    expect(fixed?.note).toContain("49원/PLEX"); // 649.99 × 1500 / 20000
+    expect(web?.note).toContain("8% 세일");
+    expect(fixed?.note).toContain("49원/PLEX"); // 650 × 1500 / 20000
+  });
+
+  it("ranks every PLEX pack the store sells, the cheapest offer per size", () => {
+    const store: EveStore = {
+      ...STORE,
+      plex: [
+        { qty: 500, price: 25, base: 25 },
+        { qty: 20000, price: 600, base: 650 },
+        { qty: 20000, price: 650, base: 650 },
+        { qty: 64500, price: 1600, base: 2000 },
+      ],
+    };
+    const r = rank(store);
+    const packs = r.isk.filter((x) => x.id.startsWith("web-plex-sell-")).map((x) => x.id);
+    expect(packs).toEqual(["web-plex-sell-64500", "web-plex-sell-20000", "web-plex-sell-500"]);
+    expect(r.isk.find((x) => x.id === "web-plex-sell-64500")?.label).toBe("EVE웹 64,500 PLEX팩 사서 판매");
+    expect(r.wonPerPlex).toBeCloseTo((1600 * 1500) / 64500);
+  });
+
+  it("uses the built-in pack list without store prices", () => {
+    expect(rank(null).isk.filter((x) => x.id.startsWith("web-plex-sell-")).length).toBe(9);
   });
 
   it("keeps the cheapest offer per Omega length and drops lengths the store does not sell", () => {

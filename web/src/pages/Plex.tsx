@@ -9,6 +9,7 @@ import {
   DEFAULT_DIRECTION,
   DEFAULT_FARM,
   DEFAULT_PRICES,
+  DEFAULT_SELF_FUNDED,
   INJECTOR_TIERS,
   PRICE_KEYS,
   TYPES,
@@ -21,11 +22,11 @@ import {
   type QuoteType,
   type EveStore,
   type RankRow,
+  type SelfFundedRoutes,
   type SteamLive,
 } from "../lib/plex";
 
 const STORE_KEY = "nisuwaz-plex-v2";
-const LEGACY_KEY = "evePlexCalcState_v1";
 const TOP = 5;
 
 const QTYPES: QuoteType[] = ["PLEX", "LSI", "EXT"];
@@ -45,13 +46,14 @@ interface Saved {
   usdKrw?: number;
   injectorSp?: number;
   farm?: Partial<FarmInputs>;
+  selfFunded?: Partial<SelfFundedRoutes>;
 }
 
 const VALID_DIR = new Set(PRICE_KEYS.map(([k]) => k));
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
 function loadSaved() {
-  const s = readJSON<Saved>(STORE_KEY) ?? readJSON<Saved>(LEGACY_KEY) ?? {};
+  const s = readJSON<Saved>(STORE_KEY) ?? {};
   const quotes: Quotes = { PLEX: s.quotes?.PLEX ?? null, LSI: s.quotes?.LSI ?? null, EXT: s.quotes?.EXT ?? null };
   const dir = { ...DEFAULT_DIRECTION };
   const prices = { ...DEFAULT_PRICES };
@@ -76,6 +78,10 @@ function loadSaved() {
     usdKrw: finite(s.usdKrw) && s.usdKrw > 0 ? s.usdKrw : 1545,
     injectorSp: INJECTOR_TIERS.some((t) => t.value === s.injectorSp) ? (s.injectorSp as number) : 400000,
     fetchedAt: at && !Number.isNaN(at.getTime()) ? at : null,
+    selfFunded: {
+      extract: typeof s.selfFunded?.extract === "boolean" ? s.selfFunded.extract : DEFAULT_SELF_FUNDED.extract,
+      keepTraining: typeof s.selfFunded?.keepTraining === "boolean" ? s.selfFunded.keepTraining : DEFAULT_SELF_FUNDED.keepTraining,
+    },
   };
 }
 
@@ -139,7 +145,21 @@ function Disclosure({ label, summary, children, defaultOpen = false }: { label: 
   );
 }
 
-function RankBand({ id, title, sub, rows, footnote }: { id: string; title: string; sub: string; rows: RankRow[]; footnote?: string }) {
+function RankBand({
+  id,
+  title,
+  sub,
+  rows,
+  footnote,
+  controls,
+}: {
+  id: string;
+  title: string;
+  sub: string;
+  rows: RankRow[];
+  footnote?: string;
+  controls?: ReactNode;
+}) {
   const [all, setAll] = useState(false);
   const listId = useId();
   const win = rows[0];
@@ -164,6 +184,7 @@ function RankBand({ id, title, sub, rows, footnote }: { id: string; title: strin
         )}
       </div>
       <div className="band-routes">
+        {controls}
         <ol className="routes" id={listId}>
           {shown.map((r, i) => {
             const w = r.disp ? 2 : Math.max(2, (r.val / max) * 100);
@@ -206,6 +227,7 @@ export default function Plex() {
   const [usdKrw, setUsdKrw] = useState(initial.usdKrw);
   const [injectorSp, setInjectorSp] = useState(initial.injectorSp);
   const [fetchedAt, setFetchedAt] = useState<Date | null>(initial.fetchedAt);
+  const [selfFunded, setSelfFunded] = useState<SelfFundedRoutes>(initial.selfFunded);
   const [steamLive, setSteamLive] = useState<SteamLive | null>(null);
   const [eveStore, setEveStore] = useState<Snapshot<EveStore> | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -261,8 +283,9 @@ export default function Plex() {
       usdKrw,
       injectorSp,
       farm,
+      selfFunded,
     } satisfies Saved);
-  }, [quotes, fetchedAt, prices, dir, usdKrw, injectorSp, farm]);
+  }, [quotes, fetchedAt, prices, dir, usdKrw, injectorSp, farm, selfFunded]);
 
   const changeDir = (t: QuoteType, key: string) => {
     setDir((d) => ({ ...d, [t]: key }));
@@ -272,8 +295,9 @@ export default function Plex() {
   const setF = <K extends keyof FarmInputs>(k: K, v: FarmInputs[K]) => setFarm((f) => ({ ...f, [k]: v }));
 
   const ranks = useMemo(
-    () => buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive, store: eveStore?.data ?? null }),
-    [prices, farm, usdKrw, injectorSp, steamLive, eveStore],
+    () =>
+      buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive, store: eveStore?.data ?? null, selfFunded }),
+    [prices, farm, usdKrw, injectorSp, steamLive, eveStore, selfFunded],
   );
 
   const stale = status !== "loading" && !!fetchedAt && isStale(fetchedAt, now);
@@ -382,9 +406,31 @@ export default function Plex() {
           title="원 / 오메가 1개월"
           sub="오메가 싸게"
           rows={ranks.omega}
+          controls={
+            <fieldset className="route-toggles">
+              <legend className="visually-hidden">순위에 넣을 자가펀딩 경로</legend>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={selfFunded.extract}
+                  onChange={(e) => setSelfFunded((s) => ({ ...s, extract: e.target.checked }))}
+                />
+                자가펀딩 — SP 전량 추출
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={selfFunded.keepTraining}
+                  onChange={(e) => setSelfFunded((s) => ({ ...s, keepTraining: e.target.checked }))}
+                />
+                자가펀딩 — 훈련 유지 (추출 안 함)
+              </label>
+            </fieldset>
+          }
           footnote={
             "스킬팜 자가펀딩: 24개월 오메가를 PLEX로 사고 +5임플로 24개월 내내 훈련한 뒤, 하한 SP 위로 쌓인 SP를 전부 뽑아 LSI로 판 돈을 오메가 값에서 뺀 실제 월 비용입니다. " +
             "캐릭터 SP는 하한에 머물러 성장하지 않습니다. 'MCT n개'는 캐릭터를 더 돌린 경우이고, 1~3캐릭 중 가장 싼 쪽을 보여 줍니다. " +
+            "'훈련 유지'는 SP를 뽑지 않고 24개월 오메가를 PLEX로 사서 훈련만 하는 경우의 월 비용입니다. " +
             (steamLive ? "Steam 가격은 지금 스토어 가격(세일 포함)입니다." : "Steam 가격을 못 받아 2026-06 정가로 계산했습니다.")
           }
         />
@@ -427,7 +473,7 @@ export default function Plex() {
           시세: Fuzzwork Market · Jita 4-4 (station 60003760). 서버가 몇 분마다 받아 둔 값이며 위의 기준 시각이 받은 시각입니다.
         </p>
         <p>
-          원/PLEX는 Steam·EVE웹 20k 번들 중 싼 쪽(지금 {comma(Math.round(ranks.wonPerPlex))}원)으로 계산합니다.{" "}
+          원/PLEX는 Steam 20k 번들과 EVE웹 PLEX팩 가운데 가장 싼 쪽(지금 {comma(Math.round(ranks.wonPerPlex))}원)으로 계산합니다.{" "}
           {eveStore
             ? `EVE웹 가격(오메가·PLEX·SP 번들)은 EVE 스토어에서 ${eveStore.fetchedAt ? stamp(eveStore.fetchedAt, now) + "에 " : ""}받은 값(세일 포함)입니다.`
             : "EVE웹 가격을 못 받아 2026-06 확인 가격으로 계산했습니다."}{" "}

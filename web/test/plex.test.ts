@@ -10,6 +10,7 @@ import {
   type FarmInputs,
   type Prices,
   type RankRow,
+  type SelfFundedRoutes,
   type SteamLive,
 } from "../src/lib/plex";
 
@@ -38,8 +39,15 @@ const strip = (rows: RankRow[]) => rows.map(({ label, val, note, disp }) => ({ l
 const unlive = (note: string) => note.replace(/ ?\(라이브\)$/, "");
 const strip2 = (rows: LegacyRow[]) => rows.map(({ label, val, note, disp }) => ({ label, val, note: unlive(note), disp: disp ?? null }));
 
-function ported(prices: Prices, farm: FarmInputs, usdKrw: number, injectorSp: number, steamLive: SteamLive | null) {
-  return buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive });
+function ported(
+  prices: Prices,
+  farm: FarmInputs,
+  usdKrw: number,
+  injectorSp: number,
+  steamLive: SteamLive | null,
+  selfFunded?: SelfFundedRoutes,
+) {
+  return buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive, selfFunded });
 }
 
 describe("PLEX rankings match the original page", () => {
@@ -97,6 +105,18 @@ describe("PLEX rankings match the original page", () => {
     const now = ported({ ...DEFAULT_PRICES, lsi: 1500000000 }, DEFAULT_FARM, 1545, 400000, null);
     expect(strip(now.omega)).toEqual(strip2(legacy.omega));
     expect(now.omega[0].disp).toMatch(/^이득 ₩/);
+  });
+
+  it.each([
+    ["only the keep-training route", false, true],
+    ["only the extract route", true, false],
+    ["neither self-funded route", false, false],
+  ])("with %s shown", (_name, extract, keepTraining) => {
+    const legacy = legacyRanks(`$("showSfExtract").checked=${extract}; $("showSfKeepTraining").checked=${keepTraining}`);
+    const now = ported(DEFAULT_PRICES, DEFAULT_FARM, 1545, 400000, null, { extract, keepTraining });
+    expect(strip(now.omega)).toEqual(strip2(legacy.omega));
+    expect(now.omega.some((r) => r.id === "self-funded-omega")).toBe(extract);
+    expect(now.omega.some((r) => r.id === "self-funded-omega-keep")).toBe(keepTraining);
   });
 });
 

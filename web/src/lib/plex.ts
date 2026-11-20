@@ -73,12 +73,24 @@ export const OMEGA_TIERS = [
   { mo: 3, days: 90, plex: 1200, steam: 62880, usd: 60, bonus: 200 },
   { mo: 6, days: 180, plex: 2100, steam: 110040, usd: 120, bonus: 500 },
   { mo: 12, days: 365, plex: 3600, steam: 188640, usd: 240, bonus: 1000 },
-  { mo: 24, days: 730, plex: 4950, steam: 345840, usd: 480, bonus: 1500 },
+  { mo: 24, days: 730, plex: 6600, steam: 345840, usd: 480, bonus: 1500 },
 ] as const;
 
 export const SPDAY_OPT = 64800;
 export const SPDAY_NOIMP = 51840;
-export const PLEX_BUNDLE = { steamKRW: 851500, webUSD: 649.99, qty: 20000 } as const;
+export const PLEX_BUNDLE = { steamKRW: 851500, qty: 20000 } as const;
+/** EVE web store PLEX packs (2026-06 list prices, USD), used when store prices are unavailable. */
+export const PLEX_PACKS = [
+  { qty: 100, usd: 5 },
+  { qty: 500, usd: 25 },
+  { qty: 1000, usd: 45 },
+  { qty: 1500, usd: 65 },
+  { qty: 3000, usd: 125 },
+  { qty: 6000, usd: 240 },
+  { qty: 12000, usd: 420 },
+  { qty: 20000, usd: 650 },
+  { qty: 64500, usd: 2000 },
+] as const;
 /** `key` matches the refresher's store boost keys ("undock", "3x-undock", ...). */
 export const SP_BUNDLES = [
   { key: "undock", name: "언독 부스트 번들", usd: 16, sp: 648000 },
@@ -237,7 +249,19 @@ export interface RankOptions {
   steamLive: SteamLive | null;
   /** Live EVE web store prices; null keeps the built-in 2026-06 prices. */
   store?: EveStore | null;
+  /** Which self-funded Omega routes to rank; both by default. */
+  selfFunded?: SelfFundedRoutes;
 }
+
+/** Self-funded Omega: extract all SP above the floor and sell it, or keep the SP and only train. */
+export interface SelfFundedRoutes {
+  extract: boolean;
+  keepTraining: boolean;
+}
+
+export const DEFAULT_SELF_FUNDED: SelfFundedRoutes = { extract: true, keepTraining: true };
+
+const OMEGA_24_PLEX = OMEGA_TIERS[OMEGA_TIERS.length - 1].plex;
 
 export interface Rankings {
   isk: RankRow[];
@@ -258,11 +282,23 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
   const lsi = r.lsiPrice;
 
   const store = o.store ?? null;
-  const webPack = store?.plex.find((p) => p.qty === PLEX_BUNDLE.qty);
+  const routes = o.selfFunded ?? DEFAULT_SELF_FUNDED;
+  // Every web PLEX pack: the cheapest store offer per size, or the built-in list without store prices.
+  const cheapest = new Map<number, { qty: number; price: number; base: number }>();
+  const packs = store?.plex.length ? store.plex : PLEX_PACKS.map((p) => ({ qty: p.qty, price: p.usd, base: p.usd }));
+  for (const p of packs) {
+    const had = cheapest.get(p.qty);
+    if (p.qty > 0 && (!had || p.price < had.price)) cheapest.set(p.qty, p);
+  }
   const chans = [
-    { store: "Steam 20k 번들", per: PLEX_BUNDLE.steamKRW / PLEX_BUNDLE.qty },
-    { store: "EVE웹 20k 번들", per: ((webPack ? webPack.price : PLEX_BUNDLE.webUSD) * usdKrw) / PLEX_BUNDLE.qty },
-  ].filter((c) => c.per > 0);
+    { id: "steam-plex-sell", label: "Steam 20k 번들에서 PLEX 사서 판매", sale: "", per: PLEX_BUNDLE.steamKRW / PLEX_BUNDLE.qty },
+    ...[...cheapest.values()].map((p) => ({
+      id: `web-plex-sell-${p.qty}`,
+      label: `EVE웹 ${comma(p.qty)} PLEX팩 사서 판매`,
+      sale: saleNote(p.price, p.base),
+      per: (p.price * usdKrw) / p.qty,
+    })),
+  ].filter((c) => Number.isFinite(c.per) && c.per > 0);
   const kpp = chans.length ? Math.min(...chans.map((c) => c.per)) : 0;
 
   // ③ 원 / 오메가 1개월
@@ -307,11 +343,13 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
     const sfLsiPerChar = Math.floor(Math.max(0, SPDAY_OPT * sfDays - sfFloor) / sfSpLsi);
     const sfWonPerIsk = px > 0 ? kpp / px : NaN;
     let best: { ch: number; net: number; lsiTot: number } | null = null;
-    for (let ch = 1; ch <= 3; ch++) {
-      const lsiTot = sfLsiPerChar * ch;
-      const incomeIsk = lsiTot * lsi * (1 - r.tax) - lsiTot * r.extUnit;
-      const net = ((4950 + (ch - 1) * 4600) * kpp - incomeIsk * sfWonPerIsk) / 24;
-      if (best === null || net < best.net) best = { ch, net, lsiTot };
+    if (routes.extract) {
+      for (let ch = 1; ch <= 3; ch++) {
+        const lsiTot = sfLsiPerChar * ch;
+        const incomeIsk = lsiTot * lsi * (1 - r.tax) - lsiTot * r.extUnit;
+        const net = ((OMEGA_24_PLEX + (ch - 1) * 4600) * kpp - incomeIsk * sfWonPerIsk) / 24;
+        if (best === null || net < best.net) best = { ch, net, lsiTot };
+      }
     }
     if (best && Number.isFinite(best.net)) {
       const neg = best.net < 0;
@@ -324,14 +362,22 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
         note: `24mo 오메가${mctN ? ` + MCT ${mctN}개` : ""}·+5임플 풀팜 → LSI ${comma(best.lsiTot)}개 판매수익 차감`,
       });
     }
+    if (routes.keepTraining) {
+      om.push({
+        id: "self-funded-omega-keep",
+        label: "스킬팜 자가펀딩 오메가 — 훈련 유지 (오메가만 1캐릭)",
+        val: (OMEGA_24_PLEX * kpp) / 24,
+        note: "24mo 오메가 · SP 추출 없이 훈련 보존",
+      });
+    }
   }
 
   // ① 원 / 1B ISK
-  const isk: RankRow[] = chans.map((c, i) => ({
-    id: i === 0 ? "steam-plex-sell" : "web-plex-sell",
-    label: `${c.store}에서 PLEX 사서 판매`,
+  const isk: RankRow[] = chans.map((c) => ({
+    id: c.id,
+    label: c.label,
     val: px > 0 ? (c.per / px) * 1e9 : NaN,
-    note: `${comma(Math.round(c.per))}원/PLEX 구매 → PLEX 판매가 ${comma(px)} ISK/개`,
+    note: `${comma(Math.round(c.per))}원/PLEX 구매${c.sale} → PLEX 판매가 ${comma(px)} ISK/개`,
   }));
   isk.push({
     id: "skill-farm-isk",
