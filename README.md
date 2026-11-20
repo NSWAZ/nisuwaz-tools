@@ -1,38 +1,73 @@
 # Nisuwaz Tools
 
-Standalone public tools for EVE Online.
+Public EVE Online tools for Korean players, served at tools.nisuwaz.com. The home page (`/`) is a star map that links to each tool.
 
-## Included tool
+## Included tools
 
-- PLEX farming efficiency calculator: compares direct PLEX sale against Omega + MCT skill farming using public market data.
+- `/plex` — PLEX 현질 효율 계산기: the cheapest way to turn KRW into ISK, SP or Omega time, using Jita 4-4 PLEX/LSI/extractor quotes and Steam Omega prices.
+- `/fridge` — 냉장고 계산기 (fitting shopping list): fits × count − hangar = what to buy in Jita 4-4, with prices, volume and a Multibuy list. Calls ESI and Fuzzwork directly from the browser.
+
+No EVE login, character data or server-side user state is used. Inputs are kept in the visitor's own browser storage.
+
+## How it is built
+
+```
+web/          React + Vite + TypeScript static site (hub, PLEX, 냉장고)
+refresher/    refresh.py: fetches public market data on a timer, writes JSON files
+Caddyfile     serves the built site and the JSON files; nothing else
+docker/       entrypoint.sh: runs the refresher and Caddy side by side
+```
+
+Visitor requests never reach an upstream service. The refresher fetches Fuzzwork aggregates every 5 minutes, Steam Omega prices every 30 minutes and the EVE web store page every 6 hours, validates them and writes `/srv/data/aggregates.json`, `/srv/data/steamomega.json` and `/srv/data/evestore.json` atomically. A failed fetch keeps the previous file. Caddy serves them at `GET /aggregates`, `GET /steamomega` and `GET /evestore`; the file's `Last-Modified` tells the page how old the quotes are, and the page warns when they are over 30 minutes old.
+
+The EVE web store has no public price API. The refresher reads the offer data the store page embeds (Omega lengths, PLEX packs, SP boost bundles, matched by title). If the page changes shape, the round fails, the previous file stays, and without any file the PLEX page uses its built-in 2026-06 prices.
+
+Routes: `/`, `/plex`, `/fridge` (the app), `/aggregates`, `/steamomega`, `/evestore` (data), `/healthz`, `/assets/*` (hashed, cached for a year). Only `GET` and `HEAD` are accepted; anything else is `405`.
 
 ## Data sources
 
-- Fuzzwork market aggregates for Jita 4-4 prices of PLEX, Large Skill Injector, and Skill Extractor.
-- Steam public app details API for KRW Omega pricing when available.
-- EVE Online web store prices for USD PLEX and Omega ranking comparisons when available.
+- Fuzzwork market aggregates for Jita 4-4 prices.
+- EVE ESI for item name → ID lookup and packaged volume (냉장고 계산기).
+- Steam public app details API for KRW Omega prices.
+- EVE web store page (store.eveonline.com) for USD Omega, PLEX pack and SP bundle prices.
+- Built-in public retail-price constants (2026-06) when live data is unavailable.
 
-No EVE login, character cache, roster data, or private storage is used.
-
-## Run locally
+## Develop
 
 ```bash
-PORT=8080 python3 app.py
+cd web
+npm ci
+npm run dev        # http://localhost:5173; /aggregates and /steamomega are proxied to a container on 127.0.0.1:8080
+                   # (without one the PLEX page falls back to its built-in prices)
+npm test           # calculation tests, compared against the original pages in test/legacy/
+npm run build      # type-check and build into web/dist
 ```
 
-Open `http://localhost:8080/`.
+Refresher tests:
 
-Useful endpoints:
+```bash
+python3 -m unittest discover -s tests
+```
 
-- `GET /` — calculator page
-- `GET /aggregates` — CORS-friendly Fuzzwork proxy
-- `GET /steamomega` — public Steam Omega price proxy
-- `GET /webstore` — public EVE web-store PLEX and Omega price proxy
-- `GET /api/calculate` — JSON calculation with default inputs
+## Adding a tool
+
+1. Add an entry to `web/src/tools.ts` (name, path, number key, map position) and a 256×256 icon in `web/public/icons/`.
+2. Add the page under `web/src/pages/` and its route in `web/src/App.tsx`.
+3. Add the path to the `@app` matcher in `Caddyfile`.
 
 ## Docker
 
 ```bash
 docker build -t goemktg/nisuwaz-tools .
-docker run --rm -p 8080:8080 -e PORT=8080 goemktg/nisuwaz-tools
+docker run --rm --read-only --tmpfs /tmp --tmpfs /srv/data:uid=100,gid=101 \
+  --cap-drop ALL --security-opt no-new-privileges \
+  -p 127.0.0.1:8080:8080 goemktg/nisuwaz-tools
 ```
+
+The image builds and tests the site, then runs as an unprivileged user. Settings (environment variables): `PORT` (default `8080`), `REFRESH_SECONDS` (default `300`), `STEAM_EVERY` (refresh Steam every N market rounds, default `6`), `STORE_EVERY` (refresh the EVE store every N market rounds, default `72`).
+
+Pushing a `v*` tag builds and publishes the image through `.github/workflows/docker.yml`. Actions are pinned to commit hashes; Dependabot (`.github/dependabot.yml`) proposes updates for them and the base images.
+
+## Deployment
+
+Put the container behind a reverse proxy (tools.nisuwaz.com runs Cloudflare → Caddy → this container) and publish port 8080 only on the loopback or internal network. The container itself only serves static files with short header/body timeouts, but per-client connection limits belong at the proxy.
