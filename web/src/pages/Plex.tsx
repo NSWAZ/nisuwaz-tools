@@ -44,6 +44,7 @@ interface Saved {
   usdKrw?: number;
   injectorSp?: number;
   farm?: Partial<FarmInputs>;
+  extract?: boolean;
 }
 
 const VALID_DIR = new Set(PRICE_KEYS.map(([k]) => k));
@@ -75,6 +76,7 @@ function loadSaved() {
     usdKrw: finite(s.usdKrw) && s.usdKrw > 0 ? s.usdKrw : 1545,
     injectorSp: INJECTOR_TIERS.some((t) => t.value === s.injectorSp) ? (s.injectorSp as number) : 400000,
     fetchedAt: at && !Number.isNaN(at.getTime()) ? at : null,
+    extract: s.extract === true,
   };
 }
 
@@ -144,11 +146,13 @@ function RankBand({
   sub,
   rows,
   footnote,
+  controls,
 }: {
   id: string;
   title: string;
   sub: string;
   rows: RankRow[];
+  controls?: ReactNode;
   /** One sentence, or several short notes shown as a list. */
   footnote?: string | string[];
 }) {
@@ -176,6 +180,7 @@ function RankBand({
         )}
       </div>
       <div className="band-routes">
+        {controls}
         <ol className="routes" id={listId}>
           {shown.map((r, i) => {
             const w = r.disp ? 2 : Math.max(2, (r.val / max) * 100);
@@ -227,6 +232,7 @@ export default function Plex() {
   const [prices, setPrices] = useState<Prices>(initial.prices);
   const [farm, setFarm] = useState<FarmInputs>(initial.farm);
   const [usdKrw, setUsdKrw] = useState(initial.usdKrw);
+  const [extract, setExtract] = useState(initial.extract);
   const [injectorSp, setInjectorSp] = useState(initial.injectorSp);
   const [fetchedAt, setFetchedAt] = useState<Date | null>(initial.fetchedAt);
   const [steamLive, setSteamLive] = useState<SteamLive | null>(null);
@@ -284,8 +290,9 @@ export default function Plex() {
       usdKrw,
       injectorSp,
       farm,
+      extract,
     } satisfies Saved);
-  }, [quotes, fetchedAt, prices, dir, usdKrw, injectorSp, farm]);
+  }, [quotes, fetchedAt, prices, dir, usdKrw, injectorSp, farm, extract]);
 
   const changeDir = (t: QuoteType, key: string) => {
     setDir((d) => ({ ...d, [t]: key }));
@@ -296,8 +303,8 @@ export default function Plex() {
 
   const ranks = useMemo(
     () =>
-      buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive, store: eveStore?.data ?? null }),
-    [prices, farm, usdKrw, injectorSp, steamLive, eveStore],
+      buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive, store: eveStore?.data ?? null, extract }),
+    [prices, farm, usdKrw, injectorSp, steamLive, eveStore, extract],
   );
 
   const stale = status !== "loading" && !!fetchedAt && isStale(fetchedAt, now);
@@ -406,9 +413,17 @@ export default function Plex() {
           title="원 / 오메가 1개월"
           sub="오메가 싸게"
           rows={ranks.omega}
+          controls={
+            <label className="check band-toggle">
+              <input type="checkbox" checked={extract} onChange={(e) => setExtract(e.target.checked)} />
+              SP 추출 수익 포함
+            </label>
+          }
           footnote={[
-            `자가펀딩: 24개월 오메가로 내내 훈련(+5임플)하고, 쌓인 SP를 뽑아 판 돈을 뺀 월 비용. 번 ISK는 현질 최저가(${ranks.wonPerPlex.toFixed(1)}원/PLEX)로 원화 환산. MCT n개는 캐릭터를 더 돌린 경우(1~3캐릭 중 최저).`,
-            "PLEX-오메가: 적힌 팩으로 PLEX를 사서 게임 안에서 오메가 구매. SP를 뽑지 않고 훈련만 할 때 비용도 이 값.",
+            extract
+              ? `추출 포함: 하한 SP를 이미 넘은 캐릭 1개가 한 달 훈련(+5임플)한 SP를 전부 뽑아 판 수익(₩${comma(Math.round(ranks.extractWon))})을 모든 경로에서 뺀 값. 번 ISK는 현질 최저가(${ranks.wonPerPlex.toFixed(1)}원/PLEX)로 원화 환산.`
+              : "추출 미포함: 오메가를 사서 훈련만 할 때의 순수 구매 비용.",
+            "PLEX-오메가: 적힌 팩으로 PLEX를 사서 게임 안에서 오메가 구매.",
             steamLive ? "Steam: 지금 스토어 가격(세일 포함)." : "Steam: 가격을 못 받아 2026-06 정가로 계산.",
           ]}
         />

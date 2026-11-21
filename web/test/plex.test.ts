@@ -37,11 +37,11 @@ const strip = (rows: RankRow[]) => rows.map(({ label, val, note, disp }) => ({ l
 // The new page drops the original's "(라이브)" marker on live Steam prices (the band footnote says they are live).
 const unlive = (note: string) => note.replace(/ ?\(라이브\)$/, "");
 const strip2 = (rows: LegacyRow[]) => rows.map(({ label, val, note, disp }) => ({ label, val, note: unlive(note), disp: disp ?? null }));
-// The new page splits PLEX-Omega per PLEX pack and drops the keep-training row (it equalled PLEX-Omega 24 months),
+// The new page splits PLEX-Omega per PLEX pack and replaces the self-funded rows with an extraction toggle,
 // so those rows are checked on their own below.
 const omegaNow = (rows: RankRow[]) => strip(rows.filter((r) => !r.id.startsWith("plex-omega-")));
 const omegaLegacy = (rows: LegacyRow[]) =>
-  strip2(rows.filter((r) => !r.label.startsWith("PLEX-오메가") && !r.label.includes("훈련 유지")));
+  strip2(rows.filter((r) => !r.label.startsWith("PLEX-오메가") && !r.label.includes("자가펀딩")));
 
 function ported(
   prices: Prices,
@@ -49,8 +49,9 @@ function ported(
   usdKrw: number,
   injectorSp: number,
   steamLive: SteamLive | null,
+  extract = false,
 ) {
-  return buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive });
+  return buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive, extract });
 }
 
 describe("PLEX rankings match the original page", () => {
@@ -103,17 +104,6 @@ describe("PLEX rankings match the original page", () => {
     expect(omegaNow(now.omega)).toEqual(omegaLegacy(legacy.omega));
   });
 
-  it("when skill farming pays for Omega by itself", () => {
-    const legacy = legacyRanks(`$("pxLSI").value=1500000000`);
-    const now = ported({ ...DEFAULT_PRICES, lsi: 1500000000 }, DEFAULT_FARM, 1545, 400000, null);
-    expect(omegaNow(now.omega)).toEqual(omegaLegacy(legacy.omega));
-    expect(now.omega[0].disp).toMatch(/^이득 ₩/);
-  });
-
-  it("always ranks the self-funded route", () => {
-    const now = ported(DEFAULT_PRICES, DEFAULT_FARM, 1545, 400000, null);
-    expect(now.omega.some((r) => r.id === "self-funded-omega")).toBe(true);
-  });
 });
 
 describe("PLEX-Omega rows", () => {
@@ -159,5 +149,42 @@ describe("quote helpers", () => {
     expect(isUsableAggregates({ "44992": { buy: { max: "0" }, sell: {} } })).toBe(false);
     expect(isUsableAggregates("<html>")).toBe(false);
     expect(isUsableAggregates(null)).toBe(false);
+  });
+});
+
+describe("SP extraction toggle", () => {
+  const off = ported(DEFAULT_PRICES, DEFAULT_FARM, 1545, 400000, null);
+  const on = ported(DEFAULT_PRICES, DEFAULT_FARM, 1545, 400000, null, true);
+  const farm = computeFarm(DEFAULT_PRICES, DEFAULT_FARM);
+  // One month of +5 implant training, all extracted (the character is already above the floor).
+  const lsiPerMonth = (64800 * 30.4167) / 500000;
+  const income = lsiPerMonth * (DEFAULT_PRICES.lsi * (1 - farm.tax) - farm.extUnit) * (off.wonPerPlex / DEFAULT_PRICES.plex);
+
+  it("has no separate self-funded row either way", () => {
+    expect(off.omega.some((r) => r.label.includes("자가펀딩"))).toBe(false);
+    expect(on.omega.some((r) => r.label.includes("자가펀딩"))).toBe(false);
+  });
+
+  it("takes the same monthly extraction income off every Omega route", () => {
+    expect(income).toBeGreaterThan(0);
+    expect(on.omega).toHaveLength(off.omega.length);
+    for (const r of off.omega) {
+      const o = on.omega.find((x) => x.id === r.id);
+      expect(o?.val).toBeCloseTo(r.val - income, 6);
+      expect(o?.note).toContain("추출 수익");
+    }
+  });
+
+  it("leaves the SP ranking on the plain purchase cost", () => {
+    expect(strip(on.sp)).toEqual(strip(off.sp));
+    expect(strip(on.isk)).toEqual(strip(off.isk));
+  });
+
+  it("shows a gain and keeps the biggest gain first when extraction pays for Omega", () => {
+    const rich = ported({ ...DEFAULT_PRICES, lsi: 1500000000 }, DEFAULT_FARM, 1545, 400000, null, true);
+    expect(rich.omega[0].disp).toMatch(/^이득 ₩/);
+    const gains = rich.omega.filter((r) => r.disp).map((r) => Number(r.disp!.replace(/[^0-9]/g, "")));
+    expect(gains.length).toBeGreaterThan(1);
+    expect([...gains].sort((a, b) => b - a)).toEqual(gains);
   });
 });

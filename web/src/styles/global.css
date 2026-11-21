@@ -1064,6 +1064,9 @@ table.raw td {
   font-size: 0.7812rem;
   color: var(--ink-3);
 }
+.band-toggle {
+  justify-self: start;
+}
 .band-routes {
   display: grid;
   gap: 12px;
