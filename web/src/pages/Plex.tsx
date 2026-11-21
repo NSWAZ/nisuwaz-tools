@@ -9,7 +9,6 @@ import {
   DEFAULT_DIRECTION,
   DEFAULT_FARM,
   DEFAULT_PRICES,
-  DEFAULT_SELF_FUNDED,
   INJECTOR_TIERS,
   PRICE_KEYS,
   TYPES,
@@ -22,7 +21,6 @@ import {
   type QuoteType,
   type EveStore,
   type RankRow,
-  type SelfFundedRoutes,
   type SteamLive,
 } from "../lib/plex";
 
@@ -46,7 +44,7 @@ interface Saved {
   usdKrw?: number;
   injectorSp?: number;
   farm?: Partial<FarmInputs>;
-  selfFunded?: Partial<SelfFundedRoutes>;
+  extract?: boolean;
 }
 
 const VALID_DIR = new Set(PRICE_KEYS.map(([k]) => k));
@@ -78,10 +76,7 @@ function loadSaved() {
     usdKrw: finite(s.usdKrw) && s.usdKrw > 0 ? s.usdKrw : 1545,
     injectorSp: INJECTOR_TIERS.some((t) => t.value === s.injectorSp) ? (s.injectorSp as number) : 400000,
     fetchedAt: at && !Number.isNaN(at.getTime()) ? at : null,
-    selfFunded: {
-      extract: typeof s.selfFunded?.extract === "boolean" ? s.selfFunded.extract : DEFAULT_SELF_FUNDED.extract,
-      keepTraining: typeof s.selfFunded?.keepTraining === "boolean" ? s.selfFunded.keepTraining : DEFAULT_SELF_FUNDED.keepTraining,
-    },
+    extract: s.extract === true,
   };
 }
 
@@ -157,8 +152,9 @@ function RankBand({
   title: string;
   sub: string;
   rows: RankRow[];
-  footnote?: string;
   controls?: ReactNode;
+  /** One sentence, or several short notes shown as a list. */
+  footnote?: string | string[];
 }) {
   const [all, setAll] = useState(false);
   const listId = useId();
@@ -211,7 +207,18 @@ function RankBand({
             {all ? `상위 ${TOP}개만 보기` : `전체 ${rows.length}개 보기`}
           </button>
         )}
-        {footnote && <p className="hint">{footnote}</p>}
+        {typeof footnote === "string" ? (
+          <p className="hint">{footnote}</p>
+        ) : (
+          footnote &&
+          footnote.length > 0 && (
+            <ul className="hint hint-list">
+              {footnote.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+          )
+        )}
       </div>
     </section>
   );
@@ -225,9 +232,9 @@ export default function Plex() {
   const [prices, setPrices] = useState<Prices>(initial.prices);
   const [farm, setFarm] = useState<FarmInputs>(initial.farm);
   const [usdKrw, setUsdKrw] = useState(initial.usdKrw);
+  const [extract, setExtract] = useState(initial.extract);
   const [injectorSp, setInjectorSp] = useState(initial.injectorSp);
   const [fetchedAt, setFetchedAt] = useState<Date | null>(initial.fetchedAt);
-  const [selfFunded, setSelfFunded] = useState<SelfFundedRoutes>(initial.selfFunded);
   const [steamLive, setSteamLive] = useState<SteamLive | null>(null);
   const [eveStore, setEveStore] = useState<Snapshot<EveStore> | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -283,9 +290,9 @@ export default function Plex() {
       usdKrw,
       injectorSp,
       farm,
-      selfFunded,
+      extract,
     } satisfies Saved);
-  }, [quotes, fetchedAt, prices, dir, usdKrw, injectorSp, farm, selfFunded]);
+  }, [quotes, fetchedAt, prices, dir, usdKrw, injectorSp, farm, extract]);
 
   const changeDir = (t: QuoteType, key: string) => {
     setDir((d) => ({ ...d, [t]: key }));
@@ -296,8 +303,8 @@ export default function Plex() {
 
   const ranks = useMemo(
     () =>
-      buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive, store: eveStore?.data ?? null, selfFunded }),
-    [prices, farm, usdKrw, injectorSp, steamLive, eveStore, selfFunded],
+      buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive, store: eveStore?.data ?? null, extract }),
+    [prices, farm, usdKrw, injectorSp, steamLive, eveStore, extract],
   );
 
   const stale = status !== "loading" && !!fetchedAt && isStale(fetchedAt, now);
@@ -407,32 +414,18 @@ export default function Plex() {
           sub="오메가 싸게"
           rows={ranks.omega}
           controls={
-            <fieldset className="route-toggles">
-              <legend className="visually-hidden">순위에 넣을 자가펀딩 경로</legend>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={selfFunded.extract}
-                  onChange={(e) => setSelfFunded((s) => ({ ...s, extract: e.target.checked }))}
-                />
-                자가펀딩 — SP 전량 추출
-              </label>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={selfFunded.keepTraining}
-                  onChange={(e) => setSelfFunded((s) => ({ ...s, keepTraining: e.target.checked }))}
-                />
-                자가펀딩 — 훈련 유지 (추출 안 함)
-              </label>
-            </fieldset>
+            <label className="check band-toggle">
+              <input type="checkbox" checked={extract} onChange={(e) => setExtract(e.target.checked)} />
+              SP 추출 수익 포함
+            </label>
           }
-          footnote={
-            "스킬팜 자가펀딩: 24개월 오메가를 PLEX로 사고 +5임플로 24개월 내내 훈련한 뒤, 하한 SP 위로 쌓인 SP를 전부 뽑아 LSI로 판 돈을 오메가 값에서 뺀 실제 월 비용입니다. " +
-            "캐릭터 SP는 하한에 머물러 성장하지 않습니다. 'MCT n개'는 캐릭터를 더 돌린 경우이고, 1~3캐릭 중 가장 싼 쪽을 보여 줍니다. " +
-            "'훈련 유지'는 SP를 뽑지 않고 24개월 오메가를 PLEX로 사서 훈련만 하는 경우의 월 비용입니다. " +
-            (steamLive ? "Steam 가격은 지금 스토어 가격(세일 포함)입니다." : "Steam 가격을 못 받아 2026-06 정가로 계산했습니다.")
-          }
+          footnote={[
+            extract
+              ? `추출 포함: 하한 SP를 이미 넘은 캐릭 1개가 한 달 훈련(+5임플)한 SP를 전부 뽑아 판 수익(₩${comma(Math.round(ranks.extractWon))})을 모든 경로에서 뺀 값. 번 ISK는 현질 최저가(${ranks.wonPerPlex.toFixed(1)}원/PLEX)로 원화 환산.`
+              : "추출 미포함: 오메가를 사서 훈련만 할 때의 순수 구매 비용.",
+            "PLEX-오메가: 적힌 팩으로 PLEX를 사서 게임 안에서 오메가 구매.",
+            steamLive ? "Steam: 지금 스토어 가격(세일 포함)." : "Steam: 가격을 못 받아 2026-06 정가로 계산.",
+          ]}
         />
       </div>
 

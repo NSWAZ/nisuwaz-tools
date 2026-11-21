@@ -1,6 +1,6 @@
 # Keeps this repository's own inputs current: the base images in Dockerfile
 # and the pinned GitHub Actions in .github/workflows. Deployment tags are
-# bumped separately (Renovate on the infrastructure side).
+# bumped by hand in the infrastructure repository (README, "Deployment").
 version: 2
 updates:
   - package-ecosystem: docker

@@ -1,6 +1,6 @@
 /*
- * 뉴에덴 성도 — a star-atlas sheet on a blue-black ground.
- * Fine graticule and tick rules, flat system dots in EVE security-status colours,
+ * 뉴에덴 성도 — a full-screen star atlas on a blue-black ground.
+ * Flat system dots in EVE security-status colours,
  * hairline gates. No glow, no glass: colour only marks systems, winners and state.
  */
 :root {
@@ -103,6 +103,12 @@ p {
   color: var(--ink-3);
   font-size: 0.8125rem;
   line-height: 1.55;
+}
+.hint-list {
+  margin: 0;
+  padding-left: 1.1em;
+  display: grid;
+  gap: 4px;
 }
 .visually-hidden {
   position: absolute !important;
@@ -544,16 +550,12 @@ html[data-vt="back"]::view-transition-new(root) {
   isolation: isolate;
 }
 .atlas {
-  padding: clamp(16px, 2.4vw, 28px) var(--gutter-r) 28px var(--gutter);
   display: grid;
-  align-content: center;
   gap: 20px;
 }
 .chart-wrap {
   position: relative;
-  width: min(100%, calc((100svh - 150px) * 16 / 9));
-  min-width: min(100%, 720px);
-  margin-inline: auto;
+  width: 100%;
 }
 .atlas-head {
   position: absolute;
@@ -576,13 +578,31 @@ html[data-vt="back"]::view-transition-new(root) {
 }
 .chart {
   position: relative;
-  aspect-ratio: 16 / 9;
-  border: 1px solid var(--rule-2);
-  border-radius: 4px;
+  height: 100svh;
+  min-height: 520px;
   overflow: hidden;
   background:
     radial-gradient(ellipse 52% 46% at 52% 52%, #101c38 0%, transparent 100%),
     var(--deep);
+}
+.chart-pan {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+.chart-pan.is-returning {
+  transition: transform 0.7s var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) and (min-width: 47.5em) {
+  .chart {
+    cursor: grab;
+    touch-action: none;
+  }
+  .chart.is-dragging,
+  .chart.is-dragging .system {
+    cursor: grabbing;
+    user-select: none;
+  }
 }
 .chart-art {
   position: absolute;
@@ -590,22 +610,11 @@ html[data-vt="back"]::view-transition-new(root) {
   width: 100%;
   height: 100%;
 }
-.graticule line {
-  stroke: var(--rule);
-  stroke-width: 1;
-}
-.ticks path {
-  stroke: var(--rule-2);
-  stroke-width: 1.5;
-}
-.grid-labels text {
-  fill: var(--ink-3);
-  font: 500 0.9375rem var(--mono);
-}
 .stars circle {
   fill: #dfe8ff;
 }
 .region {
+  vector-effect: non-scaling-stroke;
   fill: color-mix(in srgb, var(--sec-10) 3%, transparent);
   stroke: var(--rule-2);
   stroke-width: 1.5;
@@ -788,11 +797,15 @@ html[data-vt="back"]::view-transition-new(root) {
 
 @media (max-width: 47.5em) {
   .atlas {
+    padding: 16px var(--gutter-r) 28px var(--gutter);
     align-content: start;
   }
-  .chart-wrap {
-    min-width: 0;
-    width: 100%;
+  .chart {
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 16 / 9;
+    border: 1px solid var(--rule-2);
+    border-radius: 4px;
   }
   .atlas-head {
     position: static;
@@ -827,9 +840,6 @@ html[data-vt="back"]::view-transition-new(root) {
     grid-row: 1;
     margin-top: 6px;
     font-size: 0.9375rem;
-  }
-  .grid-labels {
-    display: none;
   }
 }
 
@@ -1058,14 +1068,8 @@ table.raw td {
   font-size: 0.7812rem;
   color: var(--ink-3);
 }
-.route-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 18px;
-  margin: 0 0 8px;
-  padding: 0;
-  border: 0;
-  min-width: 0;
+.band-toggle {
+  justify-self: start;
 }
 .band-routes {
   display: grid;

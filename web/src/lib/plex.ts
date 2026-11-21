@@ -249,19 +249,9 @@ export interface RankOptions {
   steamLive: SteamLive | null;
   /** Live EVE web store prices; null keeps the built-in 2026-06 prices. */
   store?: EveStore | null;
-  /** Which self-funded Omega routes to rank; both by default. */
-  selfFunded?: SelfFundedRoutes;
+  /** Take a month of SP extraction income off every Omega route; off by default (plain purchase cost). */
+  extract?: boolean;
 }
-
-/** Self-funded Omega: extract all SP above the floor and sell it, or keep the SP and only train. */
-export interface SelfFundedRoutes {
-  extract: boolean;
-  keepTraining: boolean;
-}
-
-export const DEFAULT_SELF_FUNDED: SelfFundedRoutes = { extract: true, keepTraining: true };
-
-const OMEGA_24_PLEX = OMEGA_TIERS[OMEGA_TIERS.length - 1].plex;
 
 export interface Rankings {
   isk: RankRow[];
@@ -269,6 +259,8 @@ export interface Rankings {
   omega: RankRow[];
   /** Cheapest won per PLEX across stores. */
   wonPerPlex: number;
+  /** Won earned per month by extracting and selling one character's trained SP. */
+  extractWon: number;
 }
 
 /** Keep rows with a positive finite value, cheapest first (stable for ties). */
@@ -282,7 +274,6 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
   const lsi = r.lsiPrice;
 
   const store = o.store ?? null;
-  const routes = o.selfFunded ?? DEFAULT_SELF_FUNDED;
   // Every web PLEX pack: the cheapest store offer per size, or the built-in list without store prices.
   const cheapest = new Map<number, { qty: number; price: number; base: number }>();
   const packs = store?.plex.length ? store.plex : PLEX_PACKS.map((p) => ({ qty: p.qty, price: p.usd, base: p.usd }));
@@ -291,9 +282,10 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
     if (p.qty > 0 && (!had || p.price < had.price)) cheapest.set(p.qty, p);
   }
   const chans = [
-    { id: "steam-plex-sell", label: "Steam 20k 번들에서 PLEX 사서 판매", sale: "", per: PLEX_BUNDLE.steamKRW / PLEX_BUNDLE.qty },
+    { id: "steam-plex-sell", src: "Steam 20k 번들", label: "Steam 20k 번들에서 PLEX 사서 판매", sale: "", per: PLEX_BUNDLE.steamKRW / PLEX_BUNDLE.qty },
     ...[...cheapest.values()].map((p) => ({
       id: `web-plex-sell-${p.qty}`,
+      src: `EVE웹 ${comma(p.qty)} PLEX팩`,
       label: `EVE웹 ${comma(p.qty)} PLEX팩 사서 판매`,
       sale: saleNote(p.price, p.base),
       per: (p.price * usdKrw) / p.qty,
@@ -304,7 +296,15 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
   // ③ 원 / 오메가 1개월
   const om: RankRow[] = [];
   for (const t of OMEGA_TIERS) {
-    om.push({ id: `plex-omega-${t.mo}`, label: `PLEX-오메가 ${t.mo}개월`, val: (t.plex * kpp) / t.mo, note: `${comma(t.plex)} PLEX` });
+    // PLEX bought with each pack, then Omega bought in game; priced per PLEX, so leftover PLEX keeps its value.
+    for (const c of chans) {
+      om.push({
+        id: `plex-omega-${t.mo}-${c.id}`,
+        label: `PLEX-오메가 ${t.mo}개월 · ${c.src}`,
+        val: (t.plex * c.per) / t.mo,
+        note: `${c.src} ${c.per.toFixed(1)}원/PLEX로 ${comma(t.plex)} PLEX 구매${c.sale} → 인게임 오메가`,
+      });
+    }
     const sL = o.steamLive ? o.steamLive[String(t.mo)] : undefined;
     const sPrice = sL ? sL.final : t.steam;
     const sNote = sL
@@ -336,41 +336,22 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
   const bestOmegaMonth = pureVals.length ? Math.min(...pureVals) : NaN;
   const bestOmegaDay = bestOmegaMonth / MONTH_DAYS;
 
-  {
-    const sfFloor = n(f.floorSp) || 5000000;
-    const sfSpLsi = n(f.spPerLsi) || 500000;
-    const sfDays = 24 * MONTH_DAYS;
-    const sfLsiPerChar = Math.floor(Math.max(0, SPDAY_OPT * sfDays - sfFloor) / sfSpLsi);
-    const sfWonPerIsk = px > 0 ? kpp / px : NaN;
-    let best: { ch: number; net: number; lsiTot: number } | null = null;
-    if (routes.extract) {
-      for (let ch = 1; ch <= 3; ch++) {
-        const lsiTot = sfLsiPerChar * ch;
-        const incomeIsk = lsiTot * lsi * (1 - r.tax) - lsiTot * r.extUnit;
-        const net = ((OMEGA_24_PLEX + (ch - 1) * 4600) * kpp - incomeIsk * sfWonPerIsk) / 24;
-        if (best === null || net < best.net) best = { ch, net, lsiTot };
-      }
-    }
-    if (best && Number.isFinite(best.net)) {
-      const neg = best.net < 0;
-      const mctN = best.ch - 1;
-      om.push({
-        id: "self-funded-omega",
-        label: `스킬팜 자가펀딩 오메가 (${mctN ? `MCT ${mctN}개·${best.ch}캐릭` : "오메가만 1캐릭"})`,
-        val: neg ? 0.0001 : best.net,
-        disp: neg ? `이득 ₩${comma(-best.net)}/월` : undefined,
-        note: `24mo 오메가${mctN ? ` + MCT ${mctN}개` : ""}·+5임플 풀팜 → LSI ${comma(best.lsiTot)}개 판매수익 차감`,
-      });
-    }
-    if (routes.keepTraining) {
-      om.push({
-        id: "self-funded-omega-keep",
-        label: "스킬팜 자가펀딩 오메가 — 훈련 유지 (오메가만 1캐릭)",
-        val: (OMEGA_24_PLEX * kpp) / 24,
-        note: "24mo 오메가 · SP 추출 없이 훈련 보존",
-      });
-    }
-  }
+  // One month of +5 implant training on a character already above the floor, all extracted and sold;
+  // the ISK is valued at what buying it would cost (cheapest PLEX, sold at the PLEX price).
+  const lsiPerMonth = (SPDAY_OPT * MONTH_DAYS) / (n(f.spPerLsi) || 500000);
+  const extractIsk = lsiPerMonth * (lsi * (1 - r.tax) - r.extUnit);
+  const extractWon = px > 0 ? extractIsk * (kpp / px) : NaN;
+  const omega =
+    // Ignored when extraction would lose money (LSI sells for less than the extractor and tax cost).
+    o.extract && Number.isFinite(extractWon) && extractWon > 0
+      ? om.map((x): RankRow => {
+          const net = x.val - extractWon;
+          const note = `${x.note} · 추출 수익 −₩${comma(Math.round(extractWon))}`;
+          // A route that pays for itself shows its gain; bigger gains rank first.
+          const gain = Math.round(-net);
+          return gain < 1 ? { ...x, val: Math.max(net, 1e-3), note } : { ...x, val: 1e-3 / (1 + gain), disp: `이득 ₩${comma(gain)}/월`, note };
+        })
+      : om;
 
   // ① 원 / 1B ISK
   const isk: RankRow[] = chans.map((c) => ({
@@ -405,5 +386,5 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
     });
   });
 
-  return { isk: sortRank(isk), sp: sortRank(sp), omega: sortRank(om), wonPerPlex: kpp };
+  return { isk: sortRank(isk), sp: sortRank(sp), omega: sortRank(omega), wonPerPlex: kpp, extractWon };
 }
