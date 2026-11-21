@@ -249,17 +249,16 @@ export interface RankOptions {
   steamLive: SteamLive | null;
   /** Live EVE web store prices; null keeps the built-in 2026-06 prices. */
   store?: EveStore | null;
-  /** Which self-funded Omega routes to rank; both by default. */
+  /** Whether to rank the self-funded Omega route; on by default. */
   selfFunded?: SelfFundedRoutes;
 }
 
-/** Self-funded Omega: extract all SP above the floor and sell it, or keep the SP and only train. */
+/** Self-funded Omega: extract all SP above the floor and sell it to pay for Omega. */
 export interface SelfFundedRoutes {
   extract: boolean;
-  keepTraining: boolean;
 }
 
-export const DEFAULT_SELF_FUNDED: SelfFundedRoutes = { extract: true, keepTraining: true };
+export const DEFAULT_SELF_FUNDED: SelfFundedRoutes = { extract: true };
 
 const OMEGA_24_PLEX = OMEGA_TIERS[OMEGA_TIERS.length - 1].plex;
 
@@ -291,9 +290,10 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
     if (p.qty > 0 && (!had || p.price < had.price)) cheapest.set(p.qty, p);
   }
   const chans = [
-    { id: "steam-plex-sell", label: "Steam 20k 번들에서 PLEX 사서 판매", sale: "", per: PLEX_BUNDLE.steamKRW / PLEX_BUNDLE.qty },
+    { id: "steam-plex-sell", src: "Steam 20k 번들", label: "Steam 20k 번들에서 PLEX 사서 판매", sale: "", per: PLEX_BUNDLE.steamKRW / PLEX_BUNDLE.qty },
     ...[...cheapest.values()].map((p) => ({
       id: `web-plex-sell-${p.qty}`,
+      src: `EVE웹 ${comma(p.qty)} PLEX팩`,
       label: `EVE웹 ${comma(p.qty)} PLEX팩 사서 판매`,
       sale: saleNote(p.price, p.base),
       per: (p.price * usdKrw) / p.qty,
@@ -304,7 +304,15 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
   // ③ 원 / 오메가 1개월
   const om: RankRow[] = [];
   for (const t of OMEGA_TIERS) {
-    om.push({ id: `plex-omega-${t.mo}`, label: `PLEX-오메가 ${t.mo}개월`, val: (t.plex * kpp) / t.mo, note: `${comma(t.plex)} PLEX` });
+    // PLEX bought with each pack, then Omega bought in game; priced per PLEX, so leftover PLEX keeps its value.
+    for (const c of chans) {
+      om.push({
+        id: `plex-omega-${t.mo}-${c.id}`,
+        label: `PLEX-오메가 ${t.mo}개월 · ${c.src}`,
+        val: (t.plex * c.per) / t.mo,
+        note: `${c.src} ${c.per.toFixed(1)}원/PLEX로 ${comma(t.plex)} PLEX 구매${c.sale} → 인게임 오메가`,
+      });
+    }
     const sL = o.steamLive ? o.steamLive[String(t.mo)] : undefined;
     const sPrice = sL ? sL.final : t.steam;
     const sNote = sL
@@ -360,14 +368,6 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
         val: neg ? 0.0001 : best.net,
         disp: neg ? `이득 ₩${comma(-best.net)}/월` : undefined,
         note: `24mo 오메가${mctN ? ` + MCT ${mctN}개` : ""}·+5임플 풀팜 → LSI ${comma(best.lsiTot)}개 판매수익 차감`,
-      });
-    }
-    if (routes.keepTraining) {
-      om.push({
-        id: "self-funded-omega-keep",
-        label: "스킬팜 자가펀딩 오메가 — 훈련 유지 (오메가만 1캐릭)",
-        val: (OMEGA_24_PLEX * kpp) / 24,
-        note: "24mo 오메가 · SP 추출 없이 훈련 보존",
       });
     }
   }

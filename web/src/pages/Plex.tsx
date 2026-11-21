@@ -80,7 +80,6 @@ function loadSaved() {
     fetchedAt: at && !Number.isNaN(at.getTime()) ? at : null,
     selfFunded: {
       extract: typeof s.selfFunded?.extract === "boolean" ? s.selfFunded.extract : DEFAULT_SELF_FUNDED.extract,
-      keepTraining: typeof s.selfFunded?.keepTraining === "boolean" ? s.selfFunded.keepTraining : DEFAULT_SELF_FUNDED.keepTraining,
     },
   };
 }
@@ -417,20 +416,12 @@ export default function Plex() {
                 />
                 자가펀딩 — SP 전량 추출
               </label>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={selfFunded.keepTraining}
-                  onChange={(e) => setSelfFunded((s) => ({ ...s, keepTraining: e.target.checked }))}
-                />
-                자가펀딩 — 훈련 유지 (추출 안 함)
-              </label>
             </fieldset>
           }
           footnote={
             "스킬팜 자가펀딩: 24개월 오메가를 PLEX로 사고 +5임플로 24개월 내내 훈련한 뒤, 하한 SP 위로 쌓인 SP를 전부 뽑아 LSI로 판 돈을 오메가 값에서 뺀 실제 월 비용입니다. " +
             "캐릭터 SP는 하한에 머물러 성장하지 않습니다. 'MCT n개'는 캐릭터를 더 돌린 경우이고, 1~3캐릭 중 가장 싼 쪽을 보여 줍니다. " +
-            "'훈련 유지'는 SP를 뽑지 않고 24개월 오메가를 PLEX로 사서 훈련만 하는 경우의 월 비용입니다. " +
+            "PLEX-오메가: 적힌 팩으로 PLEX를 사서 게임 안에서 오메가를 사는 경우입니다. 팩의 PLEX당 단가로 계산하므로, 팩이 오메가보다 커서 남는 PLEX는 다른 데 쓴다고 봅니다. SP를 뽑지 않고 훈련만 할 때의 비용도 이 값과 같습니다. " +
             (steamLive ? "Steam 가격은 지금 스토어 가격(세일 포함)입니다." : "Steam 가격을 못 받아 2026-06 정가로 계산했습니다.")
           }
         />

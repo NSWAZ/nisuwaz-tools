@@ -38,6 +38,11 @@ const strip = (rows: RankRow[]) => rows.map(({ label, val, note, disp }) => ({ l
 // The new page drops the original's "(라이브)" marker on live Steam prices (the band footnote says they are live).
 const unlive = (note: string) => note.replace(/ ?\(라이브\)$/, "");
 const strip2 = (rows: LegacyRow[]) => rows.map(({ label, val, note, disp }) => ({ label, val, note: unlive(note), disp: disp ?? null }));
+// The new page splits PLEX-Omega per PLEX pack and drops the keep-training row (it equalled PLEX-Omega 24 months),
+// so those rows are checked on their own below.
+const omegaNow = (rows: RankRow[]) => strip(rows.filter((r) => !r.id.startsWith("plex-omega-")));
+const omegaLegacy = (rows: LegacyRow[]) =>
+  strip2(rows.filter((r) => !r.label.startsWith("PLEX-오메가") && !r.label.includes("훈련 유지")));
 
 function ported(
   prices: Prices,
@@ -56,7 +61,7 @@ describe("PLEX rankings match the original page", () => {
     const now = ported(DEFAULT_PRICES, DEFAULT_FARM, 1545, 400000, null);
     expect(strip(now.isk)).toEqual(strip2(legacy.isk));
     expect(strip(now.sp)).toEqual(strip2(legacy.sp));
-    expect(strip(now.omega)).toEqual(strip2(legacy.omega));
+    expect(omegaNow(now.omega)).toEqual(omegaLegacy(legacy.omega));
   });
 
   it("with live quotes, Steam sale prices, another exchange rate and SP bracket", () => {
@@ -72,7 +77,7 @@ describe("PLEX rankings match the original page", () => {
     const now = ported({ plex: 4927000, lsi: 680100000, ext: 477100000 }, DEFAULT_FARM, 1388, 150000, steam);
     expect(strip(now.isk)).toEqual(strip2(legacy.isk));
     expect(strip(now.sp)).toEqual(strip2(legacy.sp));
-    expect(strip(now.omega)).toEqual(strip2(legacy.omega));
+    expect(omegaNow(now.omega)).toEqual(omegaLegacy(legacy.omega));
   });
 
   it("with changed skill-farm assumptions and a booster", () => {
@@ -97,26 +102,51 @@ describe("PLEX rankings match the original page", () => {
     const now = ported(DEFAULT_PRICES, farm, 1545, 400000, null);
     expect(strip(now.isk)).toEqual(strip2(legacy.isk));
     expect(strip(now.sp)).toEqual(strip2(legacy.sp));
-    expect(strip(now.omega)).toEqual(strip2(legacy.omega));
+    expect(omegaNow(now.omega)).toEqual(omegaLegacy(legacy.omega));
   });
 
   it("when skill farming pays for Omega by itself", () => {
     const legacy = legacyRanks(`$("pxLSI").value=1500000000`);
     const now = ported({ ...DEFAULT_PRICES, lsi: 1500000000 }, DEFAULT_FARM, 1545, 400000, null);
-    expect(strip(now.omega)).toEqual(strip2(legacy.omega));
+    expect(omegaNow(now.omega)).toEqual(omegaLegacy(legacy.omega));
     expect(now.omega[0].disp).toMatch(/^이득 ₩/);
   });
 
   it.each([
-    ["only the keep-training route", false, true],
-    ["only the extract route", true, false],
-    ["neither self-funded route", false, false],
-  ])("with %s shown", (_name, extract, keepTraining) => {
-    const legacy = legacyRanks(`$("showSfExtract").checked=${extract}; $("showSfKeepTraining").checked=${keepTraining}`);
-    const now = ported(DEFAULT_PRICES, DEFAULT_FARM, 1545, 400000, null, { extract, keepTraining });
-    expect(strip(now.omega)).toEqual(strip2(legacy.omega));
+    ["the extract route", true],
+    ["no self-funded route", false],
+  ])("with %s shown", (_name, extract) => {
+    const legacy = legacyRanks(`$("showSfExtract").checked=${extract}`);
+    const now = ported(DEFAULT_PRICES, DEFAULT_FARM, 1545, 400000, null, { extract });
+    expect(omegaNow(now.omega)).toEqual(omegaLegacy(legacy.omega));
     expect(now.omega.some((r) => r.id === "self-funded-omega")).toBe(extract);
-    expect(now.omega.some((r) => r.id === "self-funded-omega-keep")).toBe(keepTraining);
+  });
+});
+
+describe("PLEX-Omega rows", () => {
+  const now = ported(DEFAULT_PRICES, DEFAULT_FARM, 1545, 400000, null);
+  const plexOmega = now.omega.filter((r) => r.id.startsWith("plex-omega-"));
+
+  it("drops the keep-training row, which equalled PLEX-Omega 24 months", () => {
+    expect(now.omega.some((r) => r.id === "self-funded-omega-keep")).toBe(false);
+    expect(now.omega.some((r) => r.label.includes("훈련 유지"))).toBe(false);
+  });
+
+  it("prices every Omega length with every PLEX pack", () => {
+    // 5 lengths x (Steam 20k bundle + 9 web packs)
+    expect(plexOmega).toHaveLength(5 * 10);
+    const steam24 = plexOmega.find((r) => r.id === "plex-omega-24-steam-plex-sell");
+    expect(steam24?.val).toBeCloseTo((6600 * (851500 / 20000)) / 24, 6);
+    const web6k = plexOmega.find((r) => r.id === "plex-omega-24-web-plex-sell-6000");
+    expect(web6k?.val).toBeCloseTo((6600 * ((240 * 1545) / 6000)) / 24, 6);
+  });
+
+  it("says which pack the PLEX came from and at what won per PLEX", () => {
+    const steam24 = plexOmega.find((r) => r.id === "plex-omega-24-steam-plex-sell");
+    expect(steam24?.label).toBe("PLEX-오메가 24개월 · Steam 20k 번들");
+    expect(steam24?.note).toBe("Steam 20k 번들 42.6원/PLEX로 6,600 PLEX 구매 → 인게임 오메가");
+    const web6k = plexOmega.find((r) => r.id === "plex-omega-24-web-plex-sell-6000");
+    expect(web6k?.label).toBe("PLEX-오메가 24개월 · EVE웹 6,000 PLEX팩");
   });
 });
 
