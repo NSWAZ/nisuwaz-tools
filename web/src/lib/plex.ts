@@ -249,16 +249,7 @@ export interface RankOptions {
   steamLive: SteamLive | null;
   /** Live EVE web store prices; null keeps the built-in 2026-06 prices. */
   store?: EveStore | null;
-  /** Whether to rank the self-funded Omega route; on by default. */
-  selfFunded?: SelfFundedRoutes;
 }
-
-/** Self-funded Omega: extract all SP above the floor and sell it to pay for Omega. */
-export interface SelfFundedRoutes {
-  extract: boolean;
-}
-
-export const DEFAULT_SELF_FUNDED: SelfFundedRoutes = { extract: true };
 
 const OMEGA_24_PLEX = OMEGA_TIERS[OMEGA_TIERS.length - 1].plex;
 
@@ -281,7 +272,6 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
   const lsi = r.lsiPrice;
 
   const store = o.store ?? null;
-  const routes = o.selfFunded ?? DEFAULT_SELF_FUNDED;
   // Every web PLEX pack: the cheapest store offer per size, or the built-in list without store prices.
   const cheapest = new Map<number, { qty: number; price: number; base: number }>();
   const packs = store?.plex.length ? store.plex : PLEX_PACKS.map((p) => ({ qty: p.qty, price: p.usd, base: p.usd }));
@@ -351,13 +341,11 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
     const sfLsiPerChar = Math.floor(Math.max(0, SPDAY_OPT * sfDays - sfFloor) / sfSpLsi);
     const sfWonPerIsk = px > 0 ? kpp / px : NaN;
     let best: { ch: number; net: number; lsiTot: number } | null = null;
-    if (routes.extract) {
-      for (let ch = 1; ch <= 3; ch++) {
-        const lsiTot = sfLsiPerChar * ch;
-        const incomeIsk = lsiTot * lsi * (1 - r.tax) - lsiTot * r.extUnit;
-        const net = ((OMEGA_24_PLEX + (ch - 1) * 4600) * kpp - incomeIsk * sfWonPerIsk) / 24;
-        if (best === null || net < best.net) best = { ch, net, lsiTot };
-      }
+    for (let ch = 1; ch <= 3; ch++) {
+      const lsiTot = sfLsiPerChar * ch;
+      const incomeIsk = lsiTot * lsi * (1 - r.tax) - lsiTot * r.extUnit;
+      const net = ((OMEGA_24_PLEX + (ch - 1) * 4600) * kpp - incomeIsk * sfWonPerIsk) / 24;
+      if (best === null || net < best.net) best = { ch, net, lsiTot };
     }
     if (best && Number.isFinite(best.net)) {
       const neg = best.net < 0;

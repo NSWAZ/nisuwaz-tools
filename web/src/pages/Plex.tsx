@@ -9,7 +9,6 @@ import {
   DEFAULT_DIRECTION,
   DEFAULT_FARM,
   DEFAULT_PRICES,
-  DEFAULT_SELF_FUNDED,
   INJECTOR_TIERS,
   PRICE_KEYS,
   TYPES,
@@ -22,7 +21,6 @@ import {
   type QuoteType,
   type EveStore,
   type RankRow,
-  type SelfFundedRoutes,
   type SteamLive,
 } from "../lib/plex";
 
@@ -46,7 +44,6 @@ interface Saved {
   usdKrw?: number;
   injectorSp?: number;
   farm?: Partial<FarmInputs>;
-  selfFunded?: Partial<SelfFundedRoutes>;
 }
 
 const VALID_DIR = new Set(PRICE_KEYS.map(([k]) => k));
@@ -78,9 +75,6 @@ function loadSaved() {
     usdKrw: finite(s.usdKrw) && s.usdKrw > 0 ? s.usdKrw : 1545,
     injectorSp: INJECTOR_TIERS.some((t) => t.value === s.injectorSp) ? (s.injectorSp as number) : 400000,
     fetchedAt: at && !Number.isNaN(at.getTime()) ? at : null,
-    selfFunded: {
-      extract: typeof s.selfFunded?.extract === "boolean" ? s.selfFunded.extract : DEFAULT_SELF_FUNDED.extract,
-    },
   };
 }
 
@@ -150,7 +144,6 @@ function RankBand({
   sub,
   rows,
   footnote,
-  controls,
 }: {
   id: string;
   title: string;
@@ -158,7 +151,6 @@ function RankBand({
   rows: RankRow[];
   /** One sentence, or several short notes shown as a list. */
   footnote?: string | string[];
-  controls?: ReactNode;
 }) {
   const [all, setAll] = useState(false);
   const listId = useId();
@@ -184,7 +176,6 @@ function RankBand({
         )}
       </div>
       <div className="band-routes">
-        {controls}
         <ol className="routes" id={listId}>
           {shown.map((r, i) => {
             const w = r.disp ? 2 : Math.max(2, (r.val / max) * 100);
@@ -238,7 +229,6 @@ export default function Plex() {
   const [usdKrw, setUsdKrw] = useState(initial.usdKrw);
   const [injectorSp, setInjectorSp] = useState(initial.injectorSp);
   const [fetchedAt, setFetchedAt] = useState<Date | null>(initial.fetchedAt);
-  const [selfFunded, setSelfFunded] = useState<SelfFundedRoutes>(initial.selfFunded);
   const [steamLive, setSteamLive] = useState<SteamLive | null>(null);
   const [eveStore, setEveStore] = useState<Snapshot<EveStore> | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -294,9 +284,8 @@ export default function Plex() {
       usdKrw,
       injectorSp,
       farm,
-      selfFunded,
     } satisfies Saved);
-  }, [quotes, fetchedAt, prices, dir, usdKrw, injectorSp, farm, selfFunded]);
+  }, [quotes, fetchedAt, prices, dir, usdKrw, injectorSp, farm]);
 
   const changeDir = (t: QuoteType, key: string) => {
     setDir((d) => ({ ...d, [t]: key }));
@@ -307,8 +296,8 @@ export default function Plex() {
 
   const ranks = useMemo(
     () =>
-      buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive, store: eveStore?.data ?? null, selfFunded }),
-    [prices, farm, usdKrw, injectorSp, steamLive, eveStore, selfFunded],
+      buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive, store: eveStore?.data ?? null }),
+    [prices, farm, usdKrw, injectorSp, steamLive, eveStore],
   );
 
   const stale = status !== "loading" && !!fetchedAt && isStale(fetchedAt, now);
@@ -417,19 +406,6 @@ export default function Plex() {
           title="원 / 오메가 1개월"
           sub="오메가 싸게"
           rows={ranks.omega}
-          controls={
-            <fieldset className="route-toggles">
-              <legend className="visually-hidden">순위에 넣을 자가펀딩 경로</legend>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={selfFunded.extract}
-                  onChange={(e) => setSelfFunded((s) => ({ ...s, extract: e.target.checked }))}
-                />
-                자가펀딩 — SP 전량 추출
-              </label>
-            </fieldset>
-          }
           footnote={[
             `자가펀딩: 24개월 오메가로 내내 훈련(+5임플)하고, 쌓인 SP를 뽑아 판 돈을 뺀 월 비용. 번 ISK는 현질 최저가(${ranks.wonPerPlex.toFixed(1)}원/PLEX)로 원화 환산. MCT n개는 캐릭터를 더 돌린 경우(1~3캐릭 중 최저).`,
             "PLEX-오메가: 적힌 팩으로 PLEX를 사서 게임 안에서 오메가 구매. SP를 뽑지 않고 훈련만 할 때 비용도 이 값.",

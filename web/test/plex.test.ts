@@ -10,7 +10,6 @@ import {
   type FarmInputs,
   type Prices,
   type RankRow,
-  type SelfFundedRoutes,
   type SteamLive,
 } from "../src/lib/plex";
 
@@ -50,9 +49,8 @@ function ported(
   usdKrw: number,
   injectorSp: number,
   steamLive: SteamLive | null,
-  selfFunded?: SelfFundedRoutes,
 ) {
-  return buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive, selfFunded });
+  return buildRankings(computeFarm(prices, farm), farm, { usdKrw, injectorSp, steamLive });
 }
 
 describe("PLEX rankings match the original page", () => {
@@ -112,14 +110,9 @@ describe("PLEX rankings match the original page", () => {
     expect(now.omega[0].disp).toMatch(/^이득 ₩/);
   });
 
-  it.each([
-    ["the extract route", true],
-    ["no self-funded route", false],
-  ])("with %s shown", (_name, extract) => {
-    const legacy = legacyRanks(`$("showSfExtract").checked=${extract}`);
-    const now = ported(DEFAULT_PRICES, DEFAULT_FARM, 1545, 400000, null, { extract });
-    expect(omegaNow(now.omega)).toEqual(omegaLegacy(legacy.omega));
-    expect(now.omega.some((r) => r.id === "self-funded-omega")).toBe(extract);
+  it("always ranks the self-funded route", () => {
+    const now = ported(DEFAULT_PRICES, DEFAULT_FARM, 1545, 400000, null);
+    expect(now.omega.some((r) => r.id === "self-funded-omega")).toBe(true);
   });
 });
 

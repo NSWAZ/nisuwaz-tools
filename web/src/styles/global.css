@@ -1064,15 +1064,6 @@ table.raw td {
   font-size: 0.7812rem;
   color: var(--ink-3);
 }
-.route-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 18px;
-  margin: 0 0 8px;
-  padding: 0;
-  border: 0;
-  min-width: 0;
-}
 .band-routes {
   display: grid;
   gap: 12px;
