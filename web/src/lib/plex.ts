@@ -342,12 +342,14 @@ export function buildRankings(r: FarmResult, f: FarmInputs, o: RankOptions): Ran
   const extractIsk = lsiPerMonth * (lsi * (1 - r.tax) - r.extUnit);
   const extractWon = px > 0 ? extractIsk * (kpp / px) : NaN;
   const omega =
-    o.extract && Number.isFinite(extractWon)
+    // Ignored when extraction would lose money (LSI sells for less than the extractor and tax cost).
+    o.extract && Number.isFinite(extractWon) && extractWon > 0
       ? om.map((x): RankRow => {
           const net = x.val - extractWon;
           const note = `${x.note} · 추출 수익 −₩${comma(Math.round(extractWon))}`;
           // A route that pays for itself shows its gain; bigger gains rank first.
-          return net > 0 ? { ...x, val: net, note } : { ...x, val: 1e-3 / (1 - net), disp: `이득 ₩${comma(Math.round(-net))}/월`, note };
+          const gain = Math.round(-net);
+          return gain < 1 ? { ...x, val: Math.max(net, 1e-3), note } : { ...x, val: 1e-3 / (1 + gain), disp: `이득 ₩${comma(gain)}/월`, note };
         })
       : om;
 

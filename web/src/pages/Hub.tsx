@@ -90,6 +90,9 @@ function useChartPan(enabled: boolean) {
       el.removeEventListener("click", click, true);
       el.removeEventListener("pointerdown", clearSwallow, true);
       el.removeEventListener("dragstart", noNativeDrag);
+      if (start && el.hasPointerCapture(start.id)) el.releasePointerCapture(start.id);
+      el.classList.remove("is-dragging");
+      pan.classList.remove("is-returning");
       set(0, 0);
     };
   }, [enabled]);
@@ -165,7 +168,9 @@ export default function Hub() {
   const narrow = useMediaQuery("(max-width: 760px)");
   const [lit, setLit] = useState<ToolDef["id"] | null>(null);
   const [chartH, setChartH] = useState(BASE_H);
-  const { area: chart, layer: panLayer } = useChartPan(!narrow);
+  // Same condition as the grab cursor and touch-action rule in global.css.
+  const canPan = useMediaQuery("(hover: hover) and (pointer: fine) and (min-width: 47.5em)");
+  const { area: chart, layer: panLayer } = useChartPan(canPan && !narrow);
 
   // Match the drawing's height to the chart box, so it fills the screen at its own shape.
   useEffect(() => {

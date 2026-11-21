@@ -187,4 +187,12 @@ describe("SP extraction toggle", () => {
     expect(gains.length).toBeGreaterThan(1);
     expect([...gains].sort((a, b) => b - a)).toEqual(gains);
   });
+
+  it("ignores extraction when selling the SP would lose money", () => {
+    const cheapLsi = { ...DEFAULT_PRICES, lsi: 100000000 };
+    const plain = ported(cheapLsi, DEFAULT_FARM, 1545, 400000, null);
+    const lossy = ported(cheapLsi, DEFAULT_FARM, 1545, 400000, null, true);
+    expect(lossy.extractWon).toBeLessThan(0);
+    expect(strip(lossy.omega)).toEqual(strip(plain.omega));
+  });
 });
