@@ -585,6 +585,25 @@ html[data-vt="back"]::view-transition-new(root) {
     radial-gradient(ellipse 52% 46% at 52% 52%, #101c38 0%, transparent 100%),
     var(--deep);
 }
+.chart-pan {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+.chart-pan.is-returning {
+  transition: transform 0.7s var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) and (min-width: 47.5em) {
+  .chart {
+    cursor: grab;
+    touch-action: none;
+  }
+  .chart.is-dragging,
+  .chart.is-dragging .system {
+    cursor: grabbing;
+    user-select: none;
+  }
+}
 .chart-art {
   position: absolute;
   inset: 0;

@@ -12,6 +12,90 @@ const BASE_H = 900;
 // The region border: a loose dashed hull around the charted systems, drawn on the 1600 × 900 sheet.
 const REGION = "M200 790 L320 560 L520 380 L760 280 L1050 160 L1230 100 L1340 300 L1330 620 L1060 700 L760 790 L460 830 Z";
 
+/** Rubber band: the chart follows the pointer but slows down, never moving more than PAN_MAX px. */
+const PAN_MAX = 240;
+const band = (d: number) => Math.sign(d) * PAN_MAX * (1 - Math.exp(-Math.abs(d) / PAN_MAX));
+/** Movement below this many px still counts as a click on a system. */
+const DRAG_SLOP = 6;
+
+/**
+ * Drag the chart to look around; on release it springs back to the centre.
+ * A drag that starts on a system does not open it.
+ */
+function useChartPan(enabled: boolean) {
+  const area = useRef<HTMLDivElement>(null);
+  const layer = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = area.current;
+    const pan = layer.current;
+    if (!enabled || !el || !pan) return;
+    let start: { id: number; x: number; y: number } | null = null;
+    let dragging = false;
+    let swallowClick = false;
+    const set = (x: number, y: number) => {
+      pan.style.transform = x || y ? `translate3d(${x}px, ${y}px, 0)` : "";
+    };
+    const down = (e: PointerEvent) => {
+      if (e.button !== 0 || !e.isPrimary) return;
+      start = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      dragging = false;
+    };
+    const move = (e: PointerEvent) => {
+      if (!start || e.pointerId !== start.id) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      if (!dragging) {
+        if (Math.hypot(dx, dy) < DRAG_SLOP) return;
+        dragging = true;
+        el.setPointerCapture(e.pointerId);
+        el.classList.add("is-dragging");
+        pan.classList.remove("is-returning");
+      }
+      set(band(dx), band(dy));
+    };
+    const up = (e: PointerEvent) => {
+      if (!start || e.pointerId !== start.id) return;
+      start = null;
+      if (!dragging) return;
+      dragging = false;
+      swallowClick = true;
+      el.classList.remove("is-dragging");
+      pan.classList.add("is-returning");
+      set(0, 0);
+    };
+    // The click that ends a drag must not open the system it started on.
+    const click = (e: MouseEvent) => {
+      if (!swallowClick) return;
+      swallowClick = false;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    const clearSwallow = () => {
+      swallowClick = false;
+    };
+    // Links and the SVG are natively draggable; that would cancel the pan mid-way.
+    const noNativeDrag = (e: DragEvent) => e.preventDefault();
+    el.addEventListener("pointerdown", down);
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+    el.addEventListener("click", click, true);
+    el.addEventListener("pointerdown", clearSwallow, true);
+    el.addEventListener("dragstart", noNativeDrag);
+    return () => {
+      el.removeEventListener("pointerdown", down);
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+      el.removeEventListener("click", click, true);
+      el.removeEventListener("pointerdown", clearSwallow, true);
+      el.removeEventListener("dragstart", noNativeDrag);
+      set(0, 0);
+    };
+  }, [enabled]);
+  return { area, layer };
+}
+
 function ChartArt({ lit, h: H }: { lit: ToolDef["id"] | null; h: number }) {
   const at = (p: { x: number; y: number }) => ({ x: (p.x / 100) * W, y: (p.y / 100) * H });
   const point = (end: ToolDef["id"] | number) => at(typeof end === "number" ? PLANNED[end] : TOOL_BY_ID[end]);
@@ -81,7 +165,7 @@ export default function Hub() {
   const narrow = useMediaQuery("(max-width: 760px)");
   const [lit, setLit] = useState<ToolDef["id"] | null>(null);
   const [chartH, setChartH] = useState(BASE_H);
-  const chart = useRef<HTMLDivElement>(null);
+  const { area: chart, layer: panLayer } = useChartPan(!narrow);
 
   // Match the drawing's height to the chart box, so it fills the screen at its own shape.
   useEffect(() => {
@@ -128,40 +212,42 @@ export default function Hub() {
             </p>
           </header>
           <div className="chart" ref={chart}>
-            <ChartArt lit={lit} h={chartH} />
-            <ul className="systems" aria-label={narrow ? undefined : "도구"} aria-hidden={narrow || undefined}>
-              {TOOLS.map((t, i) => (
-                <li
-                  key={t.id}
-                  className="system-item"
-                  style={{ "--x": `${t.x}%`, "--y": `${t.y}%`, "--sec": t.sec, "--i": i } as CSSProperties}
-                >
-                  <a
-                    className="system"
-                    tabIndex={narrow ? -1 : undefined}
-                    onMouseEnter={() => setLit(t.id)}
-                    onMouseLeave={() => setLit(null)}
-                    onFocus={() => setLit(t.id)}
-                    onBlur={() => setLit(null)}
-                    {...linkProps(t.path, () => ({ transition: "into", origin: centerOf(dots.current[t.id] ?? null) }))}
+            <div className="chart-pan" ref={panLayer}>
+              <ChartArt lit={lit} h={chartH} />
+              <ul className="systems" aria-label={narrow ? undefined : "도구"} aria-hidden={narrow || undefined}>
+                {TOOLS.map((t, i) => (
+                  <li
+                    key={t.id}
+                    className="system-item"
+                    style={{ "--x": `${t.x}%`, "--y": `${t.y}%`, "--sec": t.sec, "--i": i } as CSSProperties}
                   >
-                    <span
-                      className="sys-dot"
-                      ref={(el) => {
-                        dots.current[t.id] = el;
-                      }}
-                      aria-hidden="true"
-                    />
-                    <span className="sys-meta" aria-hidden="true">
-                      <span>{t.secLabel}</span>
-                      <kbd>{t.key}</kbd>
-                    </span>
-                    <span className="sys-name">{t.short}</span>
-                    <span className="sys-desc">{t.desc}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
+                    <a
+                      className="system"
+                      tabIndex={narrow ? -1 : undefined}
+                      onMouseEnter={() => setLit(t.id)}
+                      onMouseLeave={() => setLit(null)}
+                      onFocus={() => setLit(t.id)}
+                      onBlur={() => setLit(null)}
+                      {...linkProps(t.path, () => ({ transition: "into", origin: centerOf(dots.current[t.id] ?? null) }))}
+                    >
+                      <span
+                        className="sys-dot"
+                        ref={(el) => {
+                          dots.current[t.id] = el;
+                        }}
+                        aria-hidden="true"
+                      />
+                      <span className="sys-meta" aria-hidden="true">
+                        <span>{t.secLabel}</span>
+                        <kbd>{t.key}</kbd>
+                      </span>
+                      <span className="sys-name">{t.short}</span>
+                      <span className="sys-desc">{t.desc}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
 
