@@ -104,6 +104,12 @@ p {
   font-size: 0.8125rem;
   line-height: 1.55;
 }
+.hint-list {
+  margin: 0;
+  padding-left: 1.1em;
+  display: grid;
+  gap: 4px;
+}
 .visually-hidden {
   position: absolute !important;
   width: 1px;

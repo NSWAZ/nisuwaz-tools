@@ -156,7 +156,8 @@ function RankBand({
   title: string;
   sub: string;
   rows: RankRow[];
-  footnote?: string;
+  /** One sentence, or several short notes shown as a list. */
+  footnote?: string | string[];
   controls?: ReactNode;
 }) {
   const [all, setAll] = useState(false);
@@ -210,7 +211,18 @@ function RankBand({
             {all ? `상위 ${TOP}개만 보기` : `전체 ${rows.length}개 보기`}
           </button>
         )}
-        {footnote && <p className="hint">{footnote}</p>}
+        {typeof footnote === "string" ? (
+          <p className="hint">{footnote}</p>
+        ) : (
+          footnote &&
+          footnote.length > 0 && (
+            <ul className="hint hint-list">
+              {footnote.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+          )
+        )}
       </div>
     </section>
   );
@@ -418,13 +430,11 @@ export default function Plex() {
               </label>
             </fieldset>
           }
-          footnote={
-            "스킬팜 자가펀딩: 24개월 오메가를 PLEX로 사고 +5임플로 24개월 내내 훈련한 뒤, 하한 SP 위로 쌓인 SP를 전부 뽑아 LSI로 판 돈을 오메가 값에서 뺀 실제 월 비용입니다. " +
-            `판매로 번 ISK는 그만큼의 ISK를 가장 싸게 현질해 마련할 때(지금 ${ranks.wonPerPlex.toFixed(1)}원/PLEX로 PLEX를 사서 시세에 판매) 드는 원화로 칩니다. ` +
-            "캐릭터 SP는 하한에 머물러 성장하지 않습니다. 'MCT n개'는 캐릭터를 더 돌린 경우이고, 1~3캐릭 중 가장 싼 쪽을 보여 줍니다. " +
-            "PLEX-오메가: 적힌 팩으로 PLEX를 사서 게임 안에서 오메가를 사는 경우입니다. 팩의 PLEX당 단가로 계산하므로, 팩이 오메가보다 커서 남는 PLEX는 다른 데 쓴다고 봅니다. SP를 뽑지 않고 훈련만 할 때의 비용도 이 값과 같습니다. " +
-            (steamLive ? "Steam 가격은 지금 스토어 가격(세일 포함)입니다." : "Steam 가격을 못 받아 2026-06 정가로 계산했습니다.")
-          }
+          footnote={[
+            `자가펀딩: 24개월 오메가로 내내 훈련(+5임플)하고, 쌓인 SP를 뽑아 판 돈을 뺀 월 비용. 번 ISK는 현질 최저가(${ranks.wonPerPlex.toFixed(1)}원/PLEX)로 원화 환산. MCT n개는 캐릭터를 더 돌린 경우(1~3캐릭 중 최저).`,
+            "PLEX-오메가: 적힌 팩으로 PLEX를 사서 게임 안에서 오메가 구매. SP를 뽑지 않고 훈련만 할 때 비용도 이 값.",
+            steamLive ? "Steam: 지금 스토어 가격(세일 포함)." : "Steam: 가격을 못 받아 2026-06 정가로 계산.",
+          ]}
         />
       </div>
 
